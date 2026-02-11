@@ -1,0 +1,10 @@
+ortools
+sqlalchemy
+dotenv
+psycopg2-binary
+fastapi
+uvicorn
+httpx
+google-genai
+bs4
+alembic
