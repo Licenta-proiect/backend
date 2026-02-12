@@ -7,7 +7,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from authlib.integrations.starlette_client import OAuth
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.models.models import User, UserRole
+from app.models.models import User, UserRole, Profesor
 
 # Încărcare variabile din .env
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -63,18 +63,38 @@ async def get_current_user(request: Request, db: Session = Depends(get_db), auth
 
 async def handle_google_login(user_info: dict, db: Session):
     """Gestionează logica de înregistrare/autentificare după callback-ul Google."""
-    user = db.query(User).filter(User.email == user_info['email']).first()
+    email = user_info['email']
+    user = db.query(User).filter(User.email == email).first()
     
     if not user:
+        # 1. Verificăm dacă este profesor (email-ul există în tabelul profesori)
+        is_profesor = db.query(Profesor).filter(Profesor.emailAddress == email).first()
+        
+        if is_profesor:
+            new_role = UserRole.PROFESOR.value
+        # 2. Verificăm dacă este student (are domeniul @student.usv.ro)
+        elif email.endswith("@student.usv.ro"):
+            new_role = UserRole.STUDENT.value
+        # 3. Dacă nu este niciunul, blocăm accesul
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="Accesul este permis doar membrilor comunității."
+            )
+
         user = User(
-            email=user_info['email'],
+            email=email,
             firstName=user_info.get('given_name'),
             lastName=user_info.get('family_name'),
-            role=UserRole.STUDENT.value
+            role=new_role
         )
-        db.merge(user)
-        db.commit()
-        user = db.query(User).filter(User.email == user_info['email']).first()
-    
+        db.add(user) # Adăugăm utilizatorul nou în sesiune
+
+    # Setăm timpul conectării curente pentru toți utilizatorii (noi sau existenți)
+    user.last_login = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(user) # Actualizează obiectul 'user' cu datele salvate (inclusiv ID-ul generat)
+
     return user
 
