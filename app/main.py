@@ -1,44 +1,91 @@
 # app/main.py
 import os
-from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException, Header, status
-from dotenv import load_dotenv
+from fastapi import FastAPI, BackgroundTasks, Depends, Request, HTTPException
+from starlette.middleware.sessions import SessionMiddleware
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+from app.db.session import get_db
 
-# Importăm funcțiile de populare din servicii
+from app.models.models import User
+from app.services.auth import (
+    oauth, create_access_token, get_current_user, 
+    handle_google_login, security
+)
 from app.services.scraper import populate as populate_base
 from app.services.scraper_calendar import run as populate_calendar
 from app.services.scraper_orar import populate as populate_orar
 
-load_dotenv()
-
-# Funcție de securitate (Dependency)
-async def verify_admin(x_admin_token: str = Header(None)):
-    admin_key = os.getenv("ADMIN_SECRET_KEY")
-    if x_admin_token != admin_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Acces neautorizat. Token admin invalid."
-        )
-    return x_admin_token
-
 app = FastAPI(title="USV Recovery Manager")
 
-# 1. Rută pentru datele de bază (Facultăți, Săli, Profesori)
-@app.post("/admin/sync/base", dependencies=[Depends(verify_admin)])
-async def sync_base_data(background_tasks: BackgroundTasks):
-    background_tasks.add_task(populate_base)
-    return {"message": "Sincronizarea datelor de bază a început în fundal."}
+# Middleware pentru Sesiuni
+app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY"))
 
-# 2. Rută pentru Calendarul Academic (Gemini API)
-@app.post("/admin/sync/calendar", dependencies=[Depends(verify_admin)])
-async def sync_calendar(background_tasks: BackgroundTasks):
-    background_tasks.add_task(populate_calendar)
-    return {"message": "Actualizarea calendarului academic prin AI a început."}
+# Middleware pentru CORS 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Permite orice sursă (pentru dezvoltare)
+    allow_credentials=True,
+    allow_methods=["*"],  # Permite toate metodele (GET, POST, etc.)
+    allow_headers=["*"],  # Permite toți header-ii
+)
 
-# 3. Rută pentru Orar (Proces de durată)
-@app.post("/admin/sync/orar", dependencies=[Depends(verify_admin)])
-async def sync_orar(background_tasks: BackgroundTasks):
-    background_tasks.add_task(populate_orar)
-    return {"message": "Descărcarea orarelor a început. Acest proces poate dura câteva minute."}
+# --- RUTE AUTENTIFICARE ---
+@app.get("/login")
+async def login(request: Request):
+    redirect_uri = request.url_for('auth_callback')
+    
+    # Forțăm Google să afișeze fereastra de selecție a contului
+    return await oauth.google.authorize_redirect(
+        request, 
+        redirect_uri,
+        prompt="select_account" 
+    )
+
+@app.get("/logout")
+async def logout(request: Request):
+    request.session.clear() # Șterge datele temporare OAuth2
+    return {"message": "Logged out successfully"}
+
+@app.get("/auth/callback")
+async def auth_callback(request: Request, db: Session = Depends(get_db)):
+    try:
+        token = await oauth.google.authorize_access_token(request)
+        user_info = token.get('userinfo')
+    except Exception:
+        raise HTTPException(status_code=400, detail="Eroare comunicare Google")
+
+    # Apelăm funcția simplificată din service
+    user = await handle_google_login(user_info, db)
+    
+    return {
+        "access_token": create_access_token(data={"sub": user.email}),
+        "token_type": "bearer",
+        "user": user # FastAPI va converti automat obiectul User în JSON
+    }
+
+# --- RUTE ADMIN ---
+def check_admin(user: User):
+    """Verifică dacă utilizatorul are rol de administrator."""
+    if user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Acces interzis. Necesar Admin.")
+
+@app.post("/admin/sync/base")
+async def sync_base_data(bg: BackgroundTasks, user: User = Depends(get_current_user)):
+    check_admin(user)
+    bg.add_task(populate_base)
+    return {"message": "Sincronizare base pornită."}
+
+@app.post("/admin/sync/calendar")
+async def sync_calendar(bg: BackgroundTasks, user: User = Depends(get_current_user)):
+    check_admin(user)
+    bg.add_task(populate_calendar)
+    return {"message": "Sincronizare calendar pornită."}
+
+@app.post("/admin/sync/orar")
+async def sync_orar(bg: BackgroundTasks, user: User = Depends(get_current_user)):
+    check_admin(user)
+    bg.add_task(populate_orar)
+    return {"message": "Sincronizare orar pornită."}
 
 @app.get("/")
 def root():
