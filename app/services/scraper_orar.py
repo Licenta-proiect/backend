@@ -61,7 +61,7 @@ async def process_and_save(db: Session, data, source_tag):
         # Determinăm numele grupei folosind mapping-ul de la finalul JSON-ului
         # Aceasta transformă ID-ul intern în text lizibil (ex: "3132a")
         lista_info = mapping_grupe.get(str(ev_id), ["Nespecificat"])
-        nume_grupa = ", ".join(lista_info)
+        nume_grupa = "; ".join(lista_info)
 
         # Actualizăm titlurile academice dacă profesorul există
         if t_id and t_id != "0":
@@ -129,14 +129,12 @@ async def populate():
             if tag == "prof":
                 for p in prof_initiali: profesori_detectati.add(p.id)
                 entities = db.query(Profesor).filter(
-                    Profesor.id.in_(list(profesori_detectati)),
-                    Profesor.has_schedule == False
+                    Profesor.id.in_(list(profesori_detectati))
                 ).all()
             
             if tag == "sala":
                 entities = db.query(Sala).filter(
-                    Sala.id.in_(list(sali_detectate)),
-                    Sala.has_schedule == False
+                    Sala.id.in_(list(sali_detectate))
                 ).all()
 
             if not entities: continue

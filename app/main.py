@@ -3,7 +3,7 @@ import os
 from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth, admin, profesori
+from app.routers import auth, admin, profesori, subgrupe
 
 app = FastAPI(title="USV Recovery Manager")
 
@@ -27,6 +27,9 @@ app.include_router(admin.router)
 
 # --- RUTE PROFESORI ---
 app.include_router(profesori.router)
+
+# --- RUTE SUBGRUPE ---
+app.include_router(subgrupe.router)
 
 @app.get("/")
 def root():
