@@ -28,3 +28,11 @@ class LoginResponse(BaseModel):
     access_token: str
     token_type: str
     user: UserResponse
+
+class ProfesorUpdate(BaseModel):
+    emailAddress: Optional[EmailStr] = None
+    lastName: Optional[str] = None
+    firstName: Optional[str] = None
+    positionShortName: Optional[str] = None
+    phdShortName: Optional[str] = None
+    otherTitle: Optional[str] = None

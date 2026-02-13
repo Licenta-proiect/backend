@@ -4,11 +4,11 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.db.session import get_db
 from app.services.auth import get_current_user
-from app.models.models import User, UserRole
+from app.models.models import User, UserRole, Profesor
 from app.services.scraper import populate as populate_base
 from app.services.scraper_calendar import run as populate_calendar
 from app.services.scraper_orar import populate as populate_orar
-from app.schemas.user import UserCreate, UserResponse
+from app.schemas.user import UserCreate, UserResponse, ProfesorUpdate
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -110,6 +110,37 @@ async def update_user(
     db.commit()
     db.refresh(user)
     return user
+
+# --- RUTE MANAGEMENT PROFESORI ---
+
+@router.put("/profesori/update/{profesor_id}")
+async def update_profesor(
+    profesor_id: int,
+    prof_data: ProfesorUpdate,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_user)
+):
+    """
+    Actualizează detaliile unui profesor (nume, prenume, email, titluri).
+    Accesibilă doar administratorilor.
+    """
+    check_admin(admin_user)
+
+    # Căutăm profesorul în baza de date după ID
+    profesor = db.query(Profesor).filter(Profesor.id == profesor_id).first()
+    if not profesor:
+        raise HTTPException(status_code=404, detail="Profesorul nu a fost găsit.")
+
+    # Actualizăm doar câmpurile trimise în request (care nu sunt None)
+    update_data = prof_data.model_dump(exclude_unset=True)
+    
+    for key, value in update_data.items():
+        setattr(profesor, key, value)
+
+    db.commit()
+    db.refresh(profesor)
+    
+    return profesor
 
 # --- RUTE SINCRONIZARE ORAR ---
 
