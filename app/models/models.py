@@ -49,7 +49,6 @@ class Profesor(Base):
     has_schedule = Column(Boolean, default=False)
 
     facultate = relationship("Facultate", back_populates="profesori")
-    # CORECTAT: back_populates="profesor" (era "profesori")
     orar = relationship("Orar", back_populates="profesor")
     rezervari_titular = relationship("Rezervare", back_populates="profesor_titular")
 
@@ -98,7 +97,6 @@ class Orar(Base):
     isDidactic = Column(Integer)
     grupa = Column(String, index=True)
 
-    # AICI se face referință la back_populates="orar" din Profesor
     profesor = relationship("Profesor", back_populates="orar")
     sala = relationship("Sala", back_populates="orar")
 

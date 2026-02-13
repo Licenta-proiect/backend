@@ -3,6 +3,7 @@ import os
 import json
 import asyncio
 import httpx
+import bleach
 from bs4 import BeautifulSoup
 from google import genai
 from datetime import datetime
@@ -95,7 +96,10 @@ def save_to_database(calendar_data):
 
         # Step 2: Inserăm noile date primite de la Gemini
         for entry in calendar_data:
-            # Folosim add() deoarece tabelul este golit în cadrul aceleiași tranzacții
+            entry['semestru'] = int(entry.get('semestru', 1))
+            entry['saptamana'] = int(entry.get('saptamana', 0))
+            # Curăță textul din observații
+            entry['observatii'] = bleach.clean(entry.get('observatii', ''), tags=[], strip=True)
             db.add(CalendarUniversitar(**entry))
 
         db.commit()

@@ -2,6 +2,7 @@
 import random
 import httpx
 import asyncio
+from app.services.scraper import clean_val
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
@@ -30,12 +31,6 @@ async def fetch_json(client, url):
     except Exception as e:
         print(f"⚠️ Eroare la {url}: {e}")
     return None
-
-def clean_val(val):
-    """Utilitar pentru a converti șirurile goale în None (NULL în baza de date)."""    
-    if val is None: return None
-    cleaned = str(val).strip()
-    return cleaned if cleaned != "" else None
 
 async def process_and_save(db: Session, data, source_tag):
     """

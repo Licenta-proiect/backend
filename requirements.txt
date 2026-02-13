@@ -11,3 +11,4 @@ alembic
 authlib
 python-jose[cryptography]
 itsdangerous
+bleach

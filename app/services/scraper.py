@@ -1,6 +1,7 @@
 # app\services\scraper.py
 import httpx
 import asyncio
+import bleach
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.models.models import Facultate, Profesor, Sala, Subgrupa, User, UserRole
@@ -20,9 +21,18 @@ async def fetch_data(url):
 
 def clean_val(val):
     """Transformă string-urile goale sau cu spații în None pentru DB."""
-    if val is None: return None
+    if val is None: 
+        return None
+    # 1. Transformă în string și elimină spațiile
     cleaned = str(val).strip()
-    return cleaned if cleaned != "" else None
+    if cleaned == "": 
+        return None
+    
+    # 2. Elimină orice tag-uri HTML (Protectie XSS)
+    # Acesta va transforma "<b>Nume</b>" în "Nume" sau va elimina <script>
+    cleaned = bleach.clean(cleaned, tags=[], strip=True)
+    
+    return cleaned
 
 async def populate():
     db: Session = SessionLocal()

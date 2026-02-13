@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.models.models import Profesor, Orar, Subgrupa, Sala
+from app.models.models import Orar, Subgrupa
 
 # Inițializezi router-ul
 router = APIRouter(prefix="/subgrupe", tags=["Subgrupe"])
