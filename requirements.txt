@@ -12,3 +12,4 @@ authlib
 python-jose[cryptography]
 itsdangerous
 bleach
+pydantic[email]

@@ -2,6 +2,7 @@
 import httpx
 import asyncio
 import bleach
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.models.models import Facultate, Profesor, Sala, Subgrupa, User, UserRole
@@ -111,7 +112,6 @@ async def populate():
         # --- 5. ADMIN (Adăugare manuală administrator) ---
         print("👤 Creăm contul de administrator...")
         admin_user = User(
-            id=1, 
             lastName="Stoica", 
             firstName="Maria Alexandra", 
             email="stoicamaria180@gmail.com",
@@ -120,8 +120,14 @@ async def populate():
 
         # Folosim merge pentru a nu da eroare dacă admin-ul există deja
         db.merge(admin_user)
-
         db.commit()
+
+        # --- RESETARE SECVENȚĂ ID ---
+        # Această comandă forțează PostgreSQL să seteze următorul ID 
+        # la valoarea MAX(id) + 1, evitând conflictele la insert-uri viitoare.
+        db.execute(text("SELECT setval('users_id_seq', (SELECT MAX(id) FROM users))"))
+        db.commit()
+
         print("✅ Populare finalizată cu succes!")
 
     except Exception as e:

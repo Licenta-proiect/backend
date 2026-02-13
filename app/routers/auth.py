@@ -5,6 +5,7 @@ from app.db.session import get_db
 from app.services.auth import (
     oauth, create_access_token, handle_google_login
 )
+from app.schemas.user import LoginResponse
 
 router = APIRouter(tags=["Autentificare"])
 
@@ -24,7 +25,7 @@ async def logout(request: Request):
     request.session.clear() # Șterge datele temporare OAuth2
     return {"message": "Logged out successfully"}
 
-@router.get("/auth/callback")
+@router.get("/auth/callback", response_model=LoginResponse) 
 async def auth_callback(request: Request, db: Session = Depends(get_db)):
     try:
         token = await oauth.google.authorize_access_token(request)
@@ -34,8 +35,9 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
 
     user = await handle_google_login(user_info, db)
     
+    # Returnăm datele conform schemei LoginResponse
     return {
         "access_token": create_access_token(data={"sub": user.email}),
         "token_type": "bearer",
-        "user": user # FastAPI va converti automat obiectul User în JSON
+        "user": user 
     }
