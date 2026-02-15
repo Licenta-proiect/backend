@@ -1,5 +1,8 @@
 # app\routers\auth.py
 from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi.responses import RedirectResponse
+import urllib.parse
+import os
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.services.auth import (
@@ -35,9 +38,18 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
 
     user = await handle_google_login(user_info, db)
     
-    # Returnăm datele conform schemei LoginResponse
-    return {
-        "access_token": create_access_token(data={"sub": user.email}),
-        "token_type": "bearer",
-        "user": user 
+    access_token = create_access_token(data={"sub": user.email})
+    
+    # Construim URL-ul de frontend (localhost:3000/callback)
+    # Adăugăm datele necesare în query parameters
+    frontend_url = os.getenv("FRONTEND_URL_CALLBACK")
+    params = {
+        "access_token": access_token,
+        "role": user.role,
+        "email": user.email,
+        "firstName": user.firstName,
+        "lastName": user.lastName
     }
+    
+    query_string = urllib.parse.urlencode(params)
+    return RedirectResponse(url=f"{frontend_url}?{query_string}")

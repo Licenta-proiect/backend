@@ -13,7 +13,7 @@ app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY"))
 # Middleware pentru CORS 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permite orice sursă (pentru dezvoltare)
+    allow_origins=["http://localhost:3000"],  # Permite orice sursă (pentru dezvoltare)
     allow_credentials=True,
     allow_methods=["*"],  # Permite toate metodele (GET, POST, etc.)
     allow_headers=["*"],  # Permite toți header-ii
