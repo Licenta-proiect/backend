@@ -110,6 +110,16 @@ class User(Base):
     last_login = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+class CerereEmailProfesor(Base):
+    __tablename__ = "cereri_email_profesori"
+    id = Column(Integer, primary_key=True)
+    lastName = Column(String, nullable=False)
+    firstName = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    data_cerere = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    status = Column(String, default="In asteptare") # "In asteptare", "Aprobat", "Respins"
+    data_solutionare = Column(DateTime, nullable=True)
+
 class Rezervare(Base):
     __tablename__ = "rezervari"
     id = Column(Integer, primary_key=True)
@@ -126,7 +136,8 @@ class Rezervare(Base):
     status = Column(String, default="rezervat")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    
+    motiv_anulare = Column(String, nullable=True)
+
     profesor_titular = relationship("Profesor", back_populates="rezervari_titular")
     sala = relationship("Sala", back_populates="rezervari")
     
@@ -141,9 +152,18 @@ class SistemStatus(Base):
     last_sync = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     message = Column(String, nullable=True)
 
+class IstoricSincronizare(Base):
+    __tablename__ = "istoric_sincronizari"
+    id = Column(Integer, primary_key=True)
+    tip_sincronizare = Column(String)  # "Base", "Calendar", "Orar"
+    tip_declansare = Column(String)    # "Manual" sau "Automat"
+    data_start = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    data_final = Column(DateTime, nullable=True)
+    status = Column(String)            # "Succes" sau "Eroare"
+    mesaj_eroare = Column(String, nullable=True)
+
 class CalendarUniversitar(Base):
     __tablename__ = "calendar_universitar"
-    
     an_universitar = Column(String, primary_key=True) # ex: "2025-2026"
     semestru = Column(Integer, primary_key=True)      # 1 sau 2
     saptamana = Column(Integer, primary_key=True)     # 1 - 14

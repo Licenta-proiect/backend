@@ -90,22 +90,38 @@ async def delete_user(
 async def update_user(
     email: str, 
     last_name: Optional[str] = None, 
-    first_name: Optional[str] = None, 
+    first_name: Optional[str] = None,
+    new_role: Optional[UserRole] = None, 
     db: Session = Depends(get_db), 
     admin_user: User = Depends(get_current_user)
 ):
-    """Actualizează numele, prenumele sau ambele (email-ul și rolul rămân neschimbate)."""
+    """
+    Actualizează numele, prenumele sau rolul.
+    Schimbarea rolului este permisă doar de la STUDENT la PROFESOR.
+    """
     check_admin(admin_user)
     
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="Utilizatorul nu a fost găsit.")
     
+    # Actualizare nume/prenume
     if last_name is not None:
         user.lastName = last_name 
-    
     if first_name is not None:
         user.firstName = first_name 
+
+    # Logică restricționată pentru schimbarea rolului
+    if new_role is not None:
+        # Verificăm dacă se încearcă altă tranziție decât STUDENT -> PROFESOR
+        if user.role == UserRole.STUDENT.value and new_role == UserRole.PROFESOR:
+            user.role = UserRole.PROFESOR.value
+        elif user.role != new_role.value:
+            # Dacă rolurile sunt deja diferite și nu este tranziția permisă, dăm eroare
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Schimbarea rolului din {user.role} în {new_role.value} nu este permisă. Doar STUDENT -> PROFESOR este acceptat."
+            )
     
     db.commit()
     db.refresh(user)
