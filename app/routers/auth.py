@@ -8,7 +8,9 @@ from app.db.session import get_db
 from app.services.auth import (
     oauth, create_access_token, handle_google_login
 )
-from app.schemas.user import LoginResponse
+
+from app.schemas.user import LoginResponse, ProfessorAccessRequestCreate
+from app.models.models import CerereEmailProfesor
 
 router = APIRouter(tags=["Autentificare"])
 
@@ -53,3 +55,29 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
     
     query_string = urllib.parse.urlencode(params)
     return RedirectResponse(url=f"{frontend_url}?{query_string}")
+
+@router.post("/request-access")
+async def request_professor_access(data: ProfessorAccessRequestCreate, db: Session = Depends(get_db)):
+    '''
+    Cerere de la profesor către administrator pentru a i se actualiza email-ul în baza de date.
+    '''
+    # Verificăm dacă există deja o cerere pentru acest email cu status "In asteptare"
+    existing_request = db.query(CerereEmailProfesor).filter(
+        CerereEmailProfesor.email == data.email,
+        CerereEmailProfesor.status == "In asteptare"
+    ).first()
+
+    if existing_request:
+        raise HTTPException(status_code=400, detail="Există deja o cerere în curs pentru acest email.")
+
+    new_request = CerereEmailProfesor(
+        firstName=data.firstName,
+        lastName=data.lastName,
+        email=data.email
+    )
+    
+    db.add(new_request)
+    db.commit()
+    db.refresh(new_request)
+    
+    return {"message": "Cererea a fost trimisă cu succes!"}

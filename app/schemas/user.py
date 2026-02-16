@@ -36,3 +36,8 @@ class ProfesorUpdate(BaseModel):
     positionShortName: Optional[str] = None
     phdShortName: Optional[str] = None
     otherTitle: Optional[str] = None
+
+class ProfessorAccessRequestCreate(BaseModel):
+    firstName: str
+    lastName: str
+    email: EmailStr
