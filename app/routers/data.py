@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.models.models import Subgrupa, Profesor, Sala
+from app.models.models import Subgrupa, Profesor, Sala, Orar
 
 router = APIRouter(prefix="/data", tags=["Data"])
 
@@ -63,3 +63,17 @@ async def get_active_grupe(db: Session = Depends(get_db)):
             "specializationShortName": g.specializationShortName
         } for g in grupe
     ]
+
+@router.get("/tip-activitate")
+async def get_tipuri_activitate(db: Session = Depends(get_db)):
+    """
+    Returnează tipurile unice de activitate (Curs, Laborator, Seminar, etc.)
+    extrase direct din coloana typeLongName a tabelului Orar.
+    """
+    # Extragem valorile distincte din coloana typeLongName
+    query = db.query(Orar.typeLongName).distinct().all()
+    
+    # Convertim lista de tuple în listă de string-uri, eliminând valorile None (dacă există)
+    tipuri = sorted([t[0] for t in query if t[0]])
+    
+    return tipuri
