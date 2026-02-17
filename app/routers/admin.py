@@ -28,7 +28,7 @@ async def get_all_users(
     users = db.query(User).all() 
     return users
 
-@router.post("/users/create", response_model=UserResponse)
+@router.post("/users/create")
 async def create_user(
     user_in: UserCreate, 
     db: Session = Depends(get_db), 
@@ -52,8 +52,7 @@ async def create_user(
     
     db.add(new_user) 
     db.commit() 
-    db.refresh(new_user)
-    return new_user
+    return {"message": f"Utilizatorul {user_in.firstName} {user_in.lastName} a fost creat cu succes sub rolul de {user_in.role.value}."}
 
 @router.delete("/users/delete/{email}")
 async def delete_user(
