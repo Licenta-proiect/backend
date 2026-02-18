@@ -208,6 +208,7 @@ async def approve_professor_request(
     """
     Aprobă o cerere de acces.
     Caută profesorul cu același nume/prenume care are email-ul NULL și îl actualizează.
+    Dacă validarea eșuează (profesor negăsit sau email duplicat), cererea este marcată automat ca rejected.
     """
     check_admin(admin_user)
 
@@ -219,8 +220,7 @@ async def approve_professor_request(
     if cerere.status != "pending":
         raise HTTPException(status_code=400, detail="Cererea a fost deja procesată.")
 
-    # 2. Căutăm profesorul corespunzător în tabela profesori
-    # Condiții: Nume identic, Prenume identic și emailAddress este NULL
+    # 2. Căutăm profesorul corespunzător
     profesor = db.query(Profesor).filter(
         func.lower(Profesor.lastName) == func.lower(cerere.lastName),
         func.lower(Profesor.firstName) == func.lower(cerere.firstName),
@@ -228,31 +228,47 @@ async def approve_professor_request(
     ).first()
 
     if not profesor:
-        # Marcăm cererea ca eșuată sau informăm adminul
+        # LOGICA NOUĂ: Marcăm ca respinsă pentru că datele sunt invalide (nu există profesorul)
+        cerere.status = "rejected"
+        cerere.data_solutionare = datetime.now(timezone.utc)
+        db.commit()
         raise HTTPException(
             status_code=404, 
-            detail="Nu s-a găsit niciun profesor potrivit fără email configurat."
+            detail="Nu s-a găsit niciun profesor potrivit fără email. Cererea a fost respinsă automat."
         )
 
-    # 3. Validăm dacă email-ul din cerere nu este deja folosit de alt profesor
+    # 3. Validăm dacă email-ul din cerere nu este deja folosit
     existing_email = db.query(Profesor).filter(Profesor.emailAddress == cerere.email).first()
     if existing_email:
-        raise HTTPException(status_code=400, detail="Email-ul din cerere este deja atribuit altui profesor.")
+        # Marcăm ca respinsă pentru că email-ul este deja ocupat
+        cerere.status = "rejected"
+        cerere.data_solutionare = datetime.now(timezone.utc)
+        db.commit()
+        raise HTTPException(
+            status_code=400, 
+            detail="Email-ul este deja atribuit altui profesor. Cererea a fost respinsă automat."
+        )
 
     try:
         # 4. Actualizăm email-ul profesorului
-        # Această acțiune va declanșa automat sync_professor_to_user dacă profesorul are deja un User creat
         profesor.emailAddress = cerere.email
 
-        # 5. Finalizăm cererea
+        # 5. Finalizăm cererea cu succes
         cerere.status = "approved"
         cerere.data_solutionare = datetime.now(timezone.utc)
 
         db.commit()
-        return {"message": f"Cerere aprobată. Email-ul a fost atribuit profesorului {profesor.lastName}."}
+        return {"message": f"Cerere aprobată pentru {profesor.lastName}."}
     
     except Exception as e:
         db.rollback()
+        # În caz de eroare neprevăzută la baza de date, încercăm totuși să marcăm cererea ca eșuată
+        try:
+            cerere.status = "rejected"
+            cerere.data_solutionare = datetime.now(timezone.utc)
+            db.commit()
+        except:
+            pass
         raise HTTPException(status_code=500, detail=f"Eroare la procesare: {str(e)}")
 
 @router.post("/requests/reject/{request_id}")
@@ -261,18 +277,39 @@ async def reject_professor_request(
     db: Session = Depends(get_db),
     admin_user: User = Depends(get_current_user)
 ):
-    """Respinge o cerere de acces."""
+    """Respinge o cerere de acces cu gestionare de erori."""
     check_admin(admin_user)
+    
+    # 1. Căutăm cererea
     cerere = db.query(CerereEmailProfesor).filter(CerereEmailProfesor.id == request_id).first()
     
     if not cerere:
         raise HTTPException(status_code=404, detail="Cererea nu a fost găsită.")
     
-    cerere.status = "rejected"
-    cerere.data_solutionare = datetime.now(timezone.utc)
-    db.commit()
-    
-    return {"message": "Cererea a fost respinsă."}
+    # 2. Verificăm dacă nu cumva este deja procesată
+    if cerere.status != "pending":
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Cererea are deja statusul: {cerere.status}."
+        )
+
+    try:
+        # 3. Marcăm ca respinsă
+        cerere.status = "rejected"
+        cerere.data_solutionare = datetime.now(timezone.utc)
+        
+        db.commit()
+        return {"message": "Cererea a fost respinsă cu succes."}
+        
+    except Exception as e:
+        db.rollback()
+        # Aici forțăm o ultimă încercare de a marca statusul dacă eroarea a fost de altă natură
+        try:
+            cerere.status = "rejected"
+            db.commit()
+        except:
+            pass
+        raise HTTPException(status_code=500, detail=f"Eroare la respingerea cererii: {str(e)}")
 
 # --- RUTE SINCRONIZARE ORAR ---
 
