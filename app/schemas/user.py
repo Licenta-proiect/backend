@@ -41,3 +41,15 @@ class ProfessorAccessRequestCreate(BaseModel):
     firstName: str
     lastName: str
     email: EmailStr
+
+class SyncHistoryResponse(BaseModel):
+    id: int
+    tip_sincronizare: str
+    tip_declansare: str
+    data_start: datetime
+    data_final: Optional[datetime] = None
+    status: str
+    mesaj_eroare: Optional[str] = None
+
+    class Config:
+        from_attributes = True

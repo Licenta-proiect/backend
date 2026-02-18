@@ -1,5 +1,5 @@
 # app\models\models.py
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Date, Table
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Date, Table, event
 from sqlalchemy.orm import relationship
 from app.db.session import Base
 from datetime import datetime, timezone
@@ -47,6 +47,9 @@ class Profesor(Base):
     faculty_id = Column(Integer, ForeignKey("facultati.id"), nullable=True)
     departmentName = Column(String)
     has_schedule = Column(Boolean, default=False)
+
+    # Relația către modelul User
+    user_account = relationship("User", back_populates="profesor_info", uselist=False)
 
     facultate = relationship("Facultate", back_populates="profesori")
     orar = relationship("Orar", back_populates="profesor")
@@ -107,8 +110,13 @@ class User(Base):
     firstName = Column(String)
     email = Column(String, unique=True, index=True, nullable=False)
     role = Column(String, default=UserRole.STUDENT.value) 
+    teacher_id = Column(Integer, ForeignKey("profesori.id"), nullable=True)
+
     last_login = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    # Relația către modelul Profesor
+    profesor_info = relationship("Profesor", back_populates="user_account")
 
 class CerereEmailProfesor(Base):
     __tablename__ = "cereri_email_profesori"
@@ -117,7 +125,7 @@ class CerereEmailProfesor(Base):
     firstName = Column(String, nullable=False)
     email = Column(String, nullable=False)
     data_cerere = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    status = Column(String, default="In asteptare") # "In asteptare", "Aprobat", "Respins"
+    status = Column(String, default="pending") # "pending", "approved", "rejected"
     data_solutionare = Column(DateTime, nullable=True)
 
 class Rezervare(Base):
@@ -170,3 +178,25 @@ class CalendarUniversitar(Base):
     
     perioada = Column(String, nullable=False)         # ex: "29.09.2025-05.10.2025" sau "22.12.2025-24.12.2025;08.01.2026-11.01.2026"
     observatii = Column(String, nullable=True)        # Sărbători sau motive de fracționare
+
+# --- LOGICA DE SINCRONIZARE (SQLAlchemy Events) ---
+# 1. Când se schimbă email-ul în tabela Profesor -> Modifică în User
+@event.listens_for(Profesor.emailAddress, 'set')
+def sync_professor_to_user(target, value, oldvalue, initiator):
+    # Verificăm dacă valoarea s-a schimbat efectiv pentru a evita buclele infinite
+    if value == oldvalue or value is None:
+        return
+    
+    # Dacă profesorul are un cont de utilizator asociat, îi actualizăm email-ul
+    if target.user_account and target.user_account.email != value:
+        target.user_account.email = value
+
+# 2. Când se schimbă email-ul în tabela User -> Modifică în Profesor
+@event.listens_for(User.email, 'set')
+def sync_user_to_professor(target, value, oldvalue, initiator):
+    if value == oldvalue or value is None:
+        return
+    
+    # Dacă utilizatorul are o legătură cu un profesor, actualizăm email-ul de contact
+    if target.profesor_info and target.profesor_info.emailAddress != value:
+        target.profesor_info.emailAddress = value

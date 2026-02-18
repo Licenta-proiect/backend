@@ -4,11 +4,12 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.db.session import get_db
 from app.services.auth import get_current_user
-from app.models.models import User, UserRole, Profesor
+from app.models.models import User, UserRole, Profesor, IstoricSincronizare
 from app.services.scraper import populate as populate_base
 from app.services.scraper_calendar import run as populate_calendar
 from app.services.scraper_orar import populate as populate_orar
-from app.schemas.user import UserCreate, UserResponse, ProfesorUpdate
+from app.schemas.user import UserCreate, UserResponse, ProfesorUpdate, SyncHistoryResponse
+from app.services.sync_logger import run_sync_with_logging
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -34,15 +35,15 @@ async def create_user(
     db: Session = Depends(get_db), 
     admin_user: User = Depends(get_current_user)
 ):
-    """Creează un utilizator nou folosind schema UserCreate cu un rol specific."""
+    """Creează un utilizator nou și îl leagă de tabela profesori dacă este cazul."""
     check_admin(admin_user)
     
-    # Verificăm dacă user-ul există deja folosind user_in.email
+    # 1. Verificăm dacă user-ul există deja în tabela users
     existing_user = db.query(User).filter(User.email == user_in.email).first() 
     if existing_user:
         raise HTTPException(status_code=400, detail="Email deja înregistrat.")
     
-    # Mapăm datele din Pydantic către modelul SQLAlchemy
+    # 2. Inițializăm noul utilizator
     new_user = User(
         lastName=user_in.lastName,
         firstName=user_in.firstName,
@@ -50,8 +51,29 @@ async def create_user(
         role=user_in.role.value
     ) 
     
+    # 3. Dacă rolul este PROFESOR, căutăm corespondența în tabela profesori
+    if user_in.role.value == UserRole.PROFESOR.value:
+        # Căutăm profesorul după email
+        profesor = db.query(Profesor).filter(Profesor.emailAddress == user_in.email).first()
+        
+        if profesor:
+            # Facem legătura prin ID
+            new_user.teacher_id = profesor.id
+        else:
+            # Opțional: Poți decide dacă permiți crearea fără legătură sau arunci eroare
+            # Dacă profesorul nu e în baza de date a orarului, poate ar trebui să refuzi
+            raise HTTPException(
+                status_code=404, 
+                detail="Acest email nu a fost găsit în lista oficială de profesori (orar)."
+            )
+
     db.add(new_user) 
-    db.commit() 
+    try:
+        db.commit() 
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Eroare la salvarea în baza de date.")
+
     return {"message": f"Utilizatorul {user_in.firstName} {user_in.lastName} a fost creat cu succes sub rolul de {user_in.role.value}."}
 
 @router.delete("/users/delete/{email}")
@@ -90,40 +112,48 @@ async def update_user(
     email: str, 
     last_name: Optional[str] = None, 
     first_name: Optional[str] = None,
-    new_role: Optional[UserRole] = None, 
+    new_email: Optional[str] = None,
     db: Session = Depends(get_db), 
     admin_user: User = Depends(get_current_user)
 ):
     """
-    Actualizează numele, prenumele sau rolul.
-    Schimbarea rolului este permisă doar de la STUDENT la PROFESOR.
+    Actualizează numele, prenumele sau adresa de email a unui utilizator.
+    Dacă utilizatorul este profesor, email-ul se va sincroniza automat în ambele tabele.
     """
     check_admin(admin_user)
     
+    # Căutăm utilizatorul după email-ul actual (cel din URL)
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="Utilizatorul nu a fost găsit.")
     
-    # Actualizare nume/prenume
+    # 1. Actualizare nume/prenume
     if last_name is not None:
         user.lastName = last_name 
     if first_name is not None:
         user.firstName = first_name 
 
-    # Logică restricționată pentru schimbarea rolului
-    if new_role is not None:
-        # Verificăm dacă se încearcă altă tranziție decât STUDENT -> PROFESOR
-        if user.role == UserRole.STUDENT.value and new_role == UserRole.PROFESOR:
-            user.role = UserRole.PROFESOR.value
-        elif user.role != new_role.value:
-            # Dacă rolurile sunt deja diferite și nu este tranziția permisă, dăm eroare
+    # 2. Actualizare Email
+    if new_email is not None and new_email != email:
+        # Verificăm dacă noul email este deja folosit de altcineva în tabela users
+        email_taken = db.query(User).filter(User.email == new_email).first()
+        if email_taken:
             raise HTTPException(
                 status_code=400, 
-                detail=f"Schimbarea rolului din {user.role} în {new_role.value} nu este permisă. Doar STUDENT -> PROFESOR este acceptat."
+                detail="Noul email este deja înregistrat de un alt utilizator."
             )
-    
-    db.commit()
-    db.refresh(user)
+        
+        # Actualizăm email-ul. 
+        # ATENȚIE: Această linie va declanșa automat sync_user_to_professor din models.py
+        user.email = new_email 
+
+    try:
+        db.commit()
+        db.refresh(user)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Eroare la salvarea modificărilor.")
+
     return user
 
 # --- RUTE MANAGEMENT PROFESORI ---
@@ -162,17 +192,35 @@ async def update_profesor(
 @router.post("/sync/base")
 async def sync_base_data(bg: BackgroundTasks, user: User = Depends(get_current_user)):
     check_admin(user)
-    bg.add_task(populate_base)
-    return {"message": "Sincronizare base pornită."}
+    # Rulăm wrapper-ul care se ocupă de logare și execuția populate_base
+    bg.add_task(run_sync_with_logging, populate_base, "Base")
+    return {"message": "Sincronizare date de bază pornită."}
 
 @router.post("/sync/calendar")
 async def sync_calendar(bg: BackgroundTasks, user: User = Depends(get_current_user)):
     check_admin(user)
-    bg.add_task(populate_calendar)
+    bg.add_task(run_sync_with_logging, populate_calendar, "Calendar")
     return {"message": "Sincronizare calendar pornită."}
 
 @router.post("/sync/orar")
 async def sync_orar(bg: BackgroundTasks, user: User = Depends(get_current_user)):
     check_admin(user)
-    bg.add_task(populate_orar)
+    bg.add_task(run_sync_with_logging, populate_orar, "Orar")
     return {"message": "Sincronizare orar pornită."}
+
+@router.get("/sync/history", response_model=List[SyncHistoryResponse])
+async def get_sync_history(
+    db: Session = Depends(get_db), 
+    admin_user: User = Depends(get_current_user)
+):
+    """
+    Returnează istoricul complet al sincronizărilor efectuate.
+    Accesibil doar administratorilor.
+    """
+    check_admin(admin_user)
+    
+    # Preluăm istoricul ordonat după cele mai recente sincronizări
+    history = db.query(IstoricSincronizare).order_by(IstoricSincronizare.data_start.desc()).all()
+    
+    return history
+

@@ -71,19 +71,33 @@ async def populate():
         print("📥 Descărcăm cadre didactice...")
         cadre_json = await fetch_data(URLS["cadre"])
         for p in cadre_json:
-            if p["id"] == "0": continue
+            p_id = int(p["id"])
+            if p_id == 0: continue
 
-            # Găsim faculty_id folosind numele facultății din JSON și maparea noastră
             f_id = fac_map.get(clean_val(p.get("facultyName")))
+            
+            # Verificăm dacă profesorul există deja pentru a-i actualiza câmpurile
+            profesor_existent = db.query(Profesor).filter(Profesor.id == p_id).first()
+            
+            new_email = clean_val(p["emailAddress"])
 
-            db.merge(Profesor(
-                id=int(p["id"]),
-                lastName=clean_val(p["lastName"]),
-                firstName=clean_val(p["firstName"]),       
-                emailAddress=clean_val(p["emailAddress"]),
-                faculty_id=f_id,
-                departmentName=clean_val(p["departmentName"])
-            ))
+            if profesor_existent:
+                # Actualizăm câmpurile. Schimbarea emailAddress va declanșa automat sync_professor_to_user
+                profesor_existent.lastName = clean_val(p["lastName"])
+                profesor_existent.firstName = clean_val(p["firstName"])
+                profesor_existent.emailAddress = new_email # AICI se declanșează magia sincronizării
+                profesor_existent.faculty_id = f_id
+                profesor_existent.departmentName = clean_val(p["departmentName"])
+            else:
+                # Dacă nu există, îl creăm
+                db.add(Profesor(
+                    id=p_id,
+                    lastName=clean_val(p["lastName"]),
+                    firstName=clean_val(p["firstName"]),       
+                    emailAddress=new_email,
+                    faculty_id=f_id,
+                    departmentName=clean_val(p["departmentName"])
+                ))
 
         # --- 4. SUBGRUPE cu protecție la Foreign Key ---
         print("📥 Descărcăm subgrupe...")
