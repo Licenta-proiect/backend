@@ -2,9 +2,10 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from datetime import datetime, timezone
 from app.db.session import get_db
 from app.services.auth import get_current_user
-from app.models.models import User, UserRole, Profesor, IstoricSincronizare
+from app.models.models import User, UserRole, Profesor, IstoricSincronizare, CerereEmailProfesor
 from app.services.scraper import populate as populate_base
 from app.services.scraper_calendar import run as populate_calendar
 from app.services.scraper_orar import populate as populate_orar
@@ -159,6 +160,93 @@ async def update_user(
         raise HTTPException(status_code=500, detail=f"Eroare la salvare: {str(e)}")
 
     return user
+
+# --- RUTE MANAGEMENT CERERI ACCES PROFESORI --- 
+
+@router.get("/requests/pending")
+async def get_pending_requests(
+    db: Session = Depends(get_db), 
+    admin_user: User = Depends(get_current_user)
+):
+    """Returnează toate cererile de acces ale profesorilor care sunt în așteptare."""
+    check_admin(admin_user)
+    requests = db.query(CerereEmailProfesor).filter(CerereEmailProfesor.status == "pending").all()
+    return requests
+
+@router.post("/requests/approve/{request_id}")
+async def approve_professor_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_user)
+):
+    """
+    Aprobă o cerere de acces.
+    Caută profesorul cu același nume/prenume care are email-ul NULL și îl actualizează.
+    """
+    check_admin(admin_user)
+
+    # 1. Găsim cererea
+    cerere = db.query(CerereEmailProfesor).filter(CerereEmailProfesor.id == request_id).first()
+    if not cerere:
+        raise HTTPException(status_code=404, detail="Cererea nu a fost găsită.")
+    
+    if cerere.status != "pending":
+        raise HTTPException(status_code=400, detail="Cererea a fost deja procesată.")
+
+    # 2. Căutăm profesorul corespunzător în tabela profesori
+    # Condiții: Nume identic, Prenume identic și emailAddress este NULL
+    profesor = db.query(Profesor).filter(
+        Profesor.lastName == cerere.lastName,
+        Profesor.firstName == cerere.firstName,
+        Profesor.emailAddress == None
+    ).first()
+
+    if not profesor:
+        # Marcăm cererea ca eșuată sau informăm adminul
+        raise HTTPException(
+            status_code=404, 
+            detail="Nu s-a găsit niciun profesor cu acest nume fără email configurat."
+        )
+
+    # 3. Validăm dacă email-ul din cerere nu este deja folosit de alt profesor
+    existing_email = db.query(Profesor).filter(Profesor.emailAddress == cerere.email).first()
+    if existing_email:
+        raise HTTPException(status_code=400, detail="Email-ul din cerere este deja atribuit altui profesor.")
+
+    try:
+        # 4. Actualizăm email-ul profesorului
+        # Această acțiune va declanșa automat sync_professor_to_user dacă profesorul are deja un User creat
+        profesor.emailAddress = cerere.email
+
+        # 5. Finalizăm cererea
+        cerere.status = "approved"
+        cerere.data_solutionare = datetime.now(timezone.utc)
+
+        db.commit()
+        return {"message": f"Cerere aprobată. Email-ul a fost atribuit profesorului {profesor.lastName}."}
+    
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Eroare la procesare: {str(e)}")
+
+@router.post("/requests/reject/{request_id}")
+async def reject_professor_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_user)
+):
+    """Respinge o cerere de acces."""
+    check_admin(admin_user)
+    cerere = db.query(CerereEmailProfesor).filter(CerereEmailProfesor.id == request_id).first()
+    
+    if not cerere:
+        raise HTTPException(status_code=404, detail="Cererea nu a fost găsită.")
+    
+    cerere.status = "rejected"
+    cerere.data_solutionare = datetime.now(timezone.utc)
+    db.commit()
+    
+    return {"message": "Cererea a fost respinsă."}
 
 # --- RUTE SINCRONIZARE ORAR ---
 
