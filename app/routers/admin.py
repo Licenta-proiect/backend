@@ -10,7 +10,7 @@ from app.models.models import User, UserRole, Profesor, IstoricSincronizare, Cer
 from app.services.scraper import populate as populate_base
 from app.services.scraper_calendar import run as populate_calendar
 from app.services.scraper_orar import populate as populate_orar
-from app.schemas.user import UserCreate, UserResponse, ProfesorUpdate, SyncHistoryResponse
+from app.schemas.user import UserCreate, UserResponse, UserUpdate, SyncHistoryResponse
 from app.services.sync_logger import run_sync_with_logging
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -112,9 +112,7 @@ async def delete_user(
 @router.put("/users/update/{email}", response_model=UserResponse)
 async def update_user(
     email: str, 
-    last_name: Optional[str] = None, 
-    first_name: Optional[str] = None,
-    new_email: Optional[str] = None,
+    update_data: UserUpdate,
     db: Session = Depends(get_db), 
     admin_user: User = Depends(get_current_user)
 ):
@@ -130,28 +128,25 @@ async def update_user(
         raise HTTPException(status_code=404, detail="Utilizatorul nu a fost găsit.")
     
     # 1. Actualizare nume/prenume
-    if last_name is not None:
-        user.lastName = last_name 
-    if first_name is not None:
-        user.firstName = first_name 
+    if update_data.last_name is not None:
+        user.lastName = update_data.last_name 
+    if update_data.first_name is not None:
+        user.firstName = update_data.first_name
 
     # 2. Actualizare Email cu Sincronizare Manuală
-    if new_email is not None and new_email != email:
+    if update_data.new_email is not None and update_data.new_email != email:
         # Verificăm dacă noul email este deja folosit
-        email_taken = db.query(User).filter(User.email == new_email).first()
+        email_taken = db.query(User).filter(User.email == update_data.new_email).first()
         if email_taken:
-            raise HTTPException(
-                status_code=400, 
-                detail="Noul email este deja înregistrat de un alt utilizator."
-            )
+            raise HTTPException(status_code=400, detail="Noul email este deja înregistrat.")
         
         # Sincronizare manuală în tabela Profesori
         # Dacă utilizatorul are o legătură cu tabela profesori (prin profesor_info sau teacher_id)
         if user.profesor_info:
-            user.profesor_info.emailAddress = new_email
+            user.profesor_info.emailAddress = update_data.new_email
         
         # Actualizăm email-ul principal
-        user.email = new_email 
+        user.email = update_data.new_email
 
     try:
         db.commit()

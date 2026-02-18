@@ -29,6 +29,11 @@ class LoginResponse(BaseModel):
     token_type: str
     user: UserResponse
 
+class UserUpdate(BaseModel):
+    last_name: Optional[str] = None
+    first_name: Optional[str] = None
+    new_email: Optional[EmailStr] = None
+
 class ProfesorUpdate(BaseModel):
     emailAddress: Optional[EmailStr] = None
     lastName: Optional[str] = None
