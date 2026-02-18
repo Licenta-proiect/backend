@@ -117,8 +117,7 @@ async def update_user(
     admin_user: User = Depends(get_current_user)
 ):
     """
-    Actualizează datele utilizatorului. 
-    Dacă se schimbă email-ul, se actualizează manual și în tabela profesori.
+    Actualizează datele utilizatorului cu protecție pentru admin-ul principal și auto-modificare.
     """
     check_admin(admin_user)
     
@@ -127,7 +126,28 @@ async def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="Utilizatorul nu a fost găsit.")
     
-    # 1. Actualizare nume/prenume
+    # --- LOGICA DE PROTECȚIE (Aceeași ca la DELETE) ---
+    
+    # Verificăm dacă se încearcă modificarea email-ului
+    if update_data.new_email is not None and update_data.new_email != email:
+        
+        # 1. Protecție Admin Principal (ID 1)
+        if user.id == 1:
+            raise HTTPException(
+                status_code=403, 
+                detail="Email-ul administratorului principal nu poate fi modificat din motive de securitate."
+            )
+        
+        # 2. Protecție Auto-Modificare
+        if user.id == admin_user.id:
+            raise HTTPException(
+                status_code=400, 
+                detail="Nu îți poți modifica propriul email din această interfață (ar duce la deconectare imediată)."
+            )
+
+    # --- FINAL LOGICĂ PROTECȚIE ---
+
+    # 1. Actualizare nume/prenume (acestea pot fi modificate fără restricții de securitate)
     if update_data.last_name is not None:
         user.lastName = update_data.last_name 
     if update_data.first_name is not None:
@@ -135,13 +155,12 @@ async def update_user(
 
     # 2. Actualizare Email cu Sincronizare Manuală
     if update_data.new_email is not None and update_data.new_email != email:
-        # Verificăm dacă noul email este deja folosit
+        # Verificăm dacă noul email este deja folosit de altcineva
         email_taken = db.query(User).filter(User.email == update_data.new_email).first()
         if email_taken:
             raise HTTPException(status_code=400, detail="Noul email este deja înregistrat.")
         
         # Sincronizare manuală în tabela Profesori
-        # Dacă utilizatorul are o legătură cu tabela profesori (prin profesor_info sau teacher_id)
         if user.profesor_info:
             user.profesor_info.emailAddress = update_data.new_email
         
