@@ -6,11 +6,11 @@ import os
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.services.auth import (
-    oauth, create_access_token, handle_google_login
+    oauth, create_access_token, handle_google_login, get_current_user
 )
 
 from app.schemas.user import LoginResponse, ProfessorAccessRequestCreate
-from app.models.models import CerereEmailProfesor
+from app.models.models import CerereEmailProfesor, User
 
 router = APIRouter(tags=["Autentificare"])
 
@@ -55,6 +55,10 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
     
     query_string = urllib.parse.urlencode(params)
     return RedirectResponse(url=f"{frontend_url}?{query_string}")
+
+@router.get("/me")
+async def get_me(current_user: User = Depends(get_current_user)):
+    return {"id": current_user.id, "email": current_user.email}
 
 @router.post("/request-access")
 async def request_professor_access(data: ProfessorAccessRequestCreate, db: Session = Depends(get_db)):
