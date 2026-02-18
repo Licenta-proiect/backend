@@ -82,10 +82,13 @@ async def populate():
             new_email = clean_val(p["emailAddress"])
 
             if profesor_existent:
-                # Actualizăm câmpurile. Schimbarea emailAddress va declanșa automat sync_professor_to_user
                 profesor_existent.lastName = clean_val(p["lastName"])
                 profesor_existent.firstName = clean_val(p["firstName"])
-                profesor_existent.emailAddress = new_email # AICI se declanșează magia sincronizării
+                
+                # Doar dacă email-ul din orar este diferit de cel din DB, facem set-ul care declanșează sync-ul
+                if profesor_existent.emailAddress != new_email:
+                    profesor_existent.emailAddress = new_email
+                    
                 profesor_existent.faculty_id = f_id
                 profesor_existent.departmentName = clean_val(p["departmentName"])
             else:
@@ -123,17 +126,30 @@ async def populate():
                 isModular=int(sg["isModular"])
             ))
 
-        # --- 5. ADMIN (Adăugare manuală administrator) ---
-        print("👤 Creăm contul de administrator...")
-        admin_user = User(
-            lastName="Stoica", 
-            firstName="Maria Alexandra", 
-            email="stoicamaria180@gmail.com",
-            role=UserRole.ADMIN.value 
-        )
+       # --- 5. ADMIN (Gestiune inteligentă administrator) ---
+        print("👤 Verificăm contul de administrator...")
+        admin_email = "stoicamaria180@gmail.com"
 
-        # Folosim merge pentru a nu da eroare dacă admin-ul există deja
-        db.merge(admin_user)
+        # Căutăm dacă admin-ul există deja după email
+        existing_admin = db.query(User).filter(User.email == admin_email).first()
+
+        if existing_admin:
+            # Dacă există, îi actualizăm doar datele (opțional)
+            existing_admin.lastName = "Stoica"
+            existing_admin.firstName = "Maria Alexandra"
+            existing_admin.role = UserRole.ADMIN.value
+            print("✅ Cont administrator actualizat.")
+        else:
+            # Dacă nu există, îl creăm de la zero
+            admin_user = User(
+                lastName="Stoica", 
+                firstName="Maria Alexandra", 
+                email=admin_email,
+                role=UserRole.ADMIN.value 
+            )
+            db.add(admin_user)
+            print("✅ Cont administrator creat.")
+
         db.commit()
 
         # --- RESETARE SECVENȚĂ ID ---

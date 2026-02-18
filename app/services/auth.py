@@ -69,10 +69,12 @@ async def handle_google_login(user_info: dict, db: Session):
     
     if not user:
         # 1. Verificăm dacă este profesor (email-ul există în tabelul profesori)
-        is_profesor = db.query(Profesor).filter(Profesor.emailAddress == email).first()
+        profesor_data = db.query(Profesor).filter(Profesor.emailAddress == email).first()
         
-        if is_profesor:
+        teacher_id = None
+        if profesor_data:
             new_role = UserRole.PROFESOR.value
+            teacher_id = profesor_data.id  # Salvăm ID-ul pentru a-l pune în noul User
         # 2. Verificăm dacă este student (are domeniul @student.usv.ro)
         elif email.endswith("@student.usv.ro"):
             new_role = UserRole.STUDENT.value
@@ -83,19 +85,20 @@ async def handle_google_login(user_info: dict, db: Session):
                 detail="Accesul este permis doar membrilor comunității."
             )
 
+        # Creăm utilizatorul nou cu teacher_id dacă a fost găsit
         user = User(
             email=email,
             firstName=user_info.get('given_name'),
             lastName=user_info.get('family_name'),
-            role=new_role
+            role=new_role,
+            teacher_id=teacher_id  # Aici se face legătura automată la prima logare
         )
-        db.add(user) # Adăugăm utilizatorul nou în sesiune
+        db.add(user)
 
-    # Setăm timpul conectării curente pentru toți utilizatorii (noi sau existenți)
+    # Setăm timpul conectării curente pentru toți utilizatorii
     user.last_login = datetime.now(timezone.utc)
 
     db.commit()
-    db.refresh(user) # Actualizează obiectul 'user' cu datele salvate (inclusiv ID-ul generat)
+    db.refresh(user)
 
     return user
-

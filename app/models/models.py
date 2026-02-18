@@ -180,23 +180,13 @@ class CalendarUniversitar(Base):
     observatii = Column(String, nullable=True)        # Sărbători sau motive de fracționare
 
 # --- LOGICA DE SINCRONIZARE (SQLAlchemy Events) ---
-# 1. Când se schimbă email-ul în tabela Profesor -> Modifică în User
+# Când se schimbă email-ul în tabela Profesor -> Modifică în User
 @event.listens_for(Profesor.emailAddress, 'set')
 def sync_professor_to_user(target, value, oldvalue, initiator):
-    # Verificăm dacă valoarea s-a schimbat efectiv pentru a evita buclele infinite
     if value == oldvalue or value is None:
         return
     
-    # Dacă profesorul are un cont de utilizator asociat, îi actualizăm email-ul
-    if target.user_account and target.user_account.email != value:
-        target.user_account.email = value
-
-# 2. Când se schimbă email-ul în tabela User -> Modifică în Profesor
-@event.listens_for(User.email, 'set')
-def sync_user_to_professor(target, value, oldvalue, initiator):
-    if value == oldvalue or value is None:
-        return
-    
-    # Dacă utilizatorul are o legătură cu un profesor, actualizăm email-ul de contact
-    if target.profesor_info and target.profesor_info.emailAddress != value:
-        target.profesor_info.emailAddress = value
+    # Dacă profesorul are un cont, actualizăm email-ul de login
+    if target.user_account:
+        if target.user_account.email != value:
+            target.user_account.email = value

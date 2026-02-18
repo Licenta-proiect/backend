@@ -117,12 +117,12 @@ async def update_user(
     admin_user: User = Depends(get_current_user)
 ):
     """
-    Actualizează numele, prenumele sau adresa de email a unui utilizator.
-    Dacă utilizatorul este profesor, email-ul se va sincroniza automat în ambele tabele.
+    Actualizează datele utilizatorului. 
+    Dacă se schimbă email-ul, se actualizează manual și în tabela profesori.
     """
     check_admin(admin_user)
     
-    # Căutăm utilizatorul după email-ul actual (cel din URL)
+    # Căutăm utilizatorul după email-ul actual
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="Utilizatorul nu a fost găsit.")
@@ -133,9 +133,9 @@ async def update_user(
     if first_name is not None:
         user.firstName = first_name 
 
-    # 2. Actualizare Email
+    # 2. Actualizare Email cu Sincronizare Manuală
     if new_email is not None and new_email != email:
-        # Verificăm dacă noul email este deja folosit de altcineva în tabela users
+        # Verificăm dacă noul email este deja folosit
         email_taken = db.query(User).filter(User.email == new_email).first()
         if email_taken:
             raise HTTPException(
@@ -143,8 +143,12 @@ async def update_user(
                 detail="Noul email este deja înregistrat de un alt utilizator."
             )
         
-        # Actualizăm email-ul. 
-        # ATENȚIE: Această linie va declanșa automat sync_user_to_professor din models.py
+        # Sincronizare manuală în tabela Profesori
+        # Dacă utilizatorul are o legătură cu tabela profesori (prin profesor_info sau teacher_id)
+        if user.profesor_info:
+            user.profesor_info.emailAddress = new_email
+        
+        # Actualizăm email-ul principal
         user.email = new_email 
 
     try:
@@ -152,40 +156,9 @@ async def update_user(
         db.refresh(user)
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail="Eroare la salvarea modificărilor.")
+        raise HTTPException(status_code=500, detail=f"Eroare la salvare: {str(e)}")
 
     return user
-
-# --- RUTE MANAGEMENT PROFESORI ---
-
-@router.put("/profesori/update/{profesor_id}")
-async def update_profesor(
-    profesor_id: int,
-    prof_data: ProfesorUpdate,
-    db: Session = Depends(get_db),
-    admin_user: User = Depends(get_current_user)
-):
-    """
-    Actualizează detaliile unui profesor (nume, prenume, email, titluri).
-    Accesibilă doar administratorilor.
-    """
-    check_admin(admin_user)
-
-    # Căutăm profesorul în baza de date după ID
-    profesor = db.query(Profesor).filter(Profesor.id == profesor_id).first()
-    if not profesor:
-        raise HTTPException(status_code=404, detail="Profesorul nu a fost găsit.")
-
-    # Actualizăm doar câmpurile trimise în request (care nu sunt None)
-    update_data = prof_data.model_dump(exclude_unset=True)
-    
-    for key, value in update_data.items():
-        setattr(profesor, key, value)
-
-    db.commit()
-    db.refresh(profesor)
-    
-    return profesor
 
 # --- RUTE SINCRONIZARE ORAR ---
 
