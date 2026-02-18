@@ -1,5 +1,6 @@
 # app\routers\admin.py
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timezone
@@ -163,14 +164,25 @@ async def update_user(
 
 # --- RUTE MANAGEMENT CERERI ACCES PROFESORI --- 
 
-@router.get("/requests/pending")
-async def get_pending_requests(
+@router.get("/requests")
+async def get_professor_requests(
+    status: Optional[str] = None, # Parametru pentru filtrare (pending, approved, rejected)
     db: Session = Depends(get_db), 
     admin_user: User = Depends(get_current_user)
 ):
-    """Returnează toate cererile de acces ale profesorilor care sunt în așteptare."""
+    """
+    Returnează cererile de acces. 
+    Dacă status nu este furnizat, le returnează pe toate (pentru istoric).
+    """
     check_admin(admin_user)
-    requests = db.query(CerereEmailProfesor).filter(CerereEmailProfesor.status == "pending").all()
+    
+    query = db.query(CerereEmailProfesor)
+    
+    if status:
+        query = query.filter(CerereEmailProfesor.status == status)
+    
+    # Ordonăm după data cererii (cele mai noi primele)
+    requests = query.order_by(CerereEmailProfesor.data_cerere.desc()).all()
     return requests
 
 @router.post("/requests/approve/{request_id}")
@@ -196,8 +208,8 @@ async def approve_professor_request(
     # 2. Căutăm profesorul corespunzător în tabela profesori
     # Condiții: Nume identic, Prenume identic și emailAddress este NULL
     profesor = db.query(Profesor).filter(
-        Profesor.lastName == cerere.lastName,
-        Profesor.firstName == cerere.firstName,
+        func.lower(Profesor.lastName) == func.lower(cerere.lastName),
+        func.lower(Profesor.firstName) == func.lower(cerere.firstName),
         Profesor.emailAddress == None
     ).first()
 
@@ -205,7 +217,7 @@ async def approve_professor_request(
         # Marcăm cererea ca eșuată sau informăm adminul
         raise HTTPException(
             status_code=404, 
-            detail="Nu s-a găsit niciun profesor cu acest nume fără email configurat."
+            detail="Nu s-a găsit niciun profesor potrivit fără email configurat."
         )
 
     # 3. Validăm dacă email-ul din cerere nu este deja folosit de alt profesor

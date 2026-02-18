@@ -64,7 +64,7 @@ async def request_professor_access(data: ProfessorAccessRequestCreate, db: Sessi
     # Verificăm dacă există deja o cerere pentru acest email cu status "In asteptare"
     existing_request = db.query(CerereEmailProfesor).filter(
         CerereEmailProfesor.email == data.email,
-        CerereEmailProfesor.status == "In asteptare"
+        CerereEmailProfesor.status == "pending"
     ).first()
 
     if existing_request:
