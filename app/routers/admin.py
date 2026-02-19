@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timezone
 from app.db.session import get_db
+from app.schemas.sync import SyncSettingsUpdate
 from app.services.auth import get_current_user
-from app.models.models import User, UserRole, Profesor, IstoricSincronizare, CerereEmailProfesor
+from app.models.models import User, UserRole, Profesor, IstoricSincronizare, CerereEmailProfesor, SistemStatus
 from app.services.scraper import populate as populate_base
 from app.services.scraper_calendar import run as populate_calendar
 from app.services.scraper_orar import populate as populate_orar
@@ -19,6 +20,11 @@ def check_admin(user: User):
     """Verifică dacă utilizatorul are rol de administrator."""
     if user.role != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Acces interzis. Necesar Admin.")
+
+async def sync_baza_si_orar_logic():
+    """Execută secvențial baza și apoi orarul"""
+    await populate_base()
+    await populate_orar()
 
 # --- RUTE MANAGEMENT USERI ---
 @router.get("/users", response_model=List[UserResponse])
@@ -332,6 +338,17 @@ async def sync_orar(bg: BackgroundTasks, user: User = Depends(get_current_user))
     bg.add_task(run_sync_with_logging, populate_orar, "Orar")
     return {"message": "Sincronizare orar pornită."}
 
+@router.post("/sync/baza-orar")
+async def sync_full_db_orar(bg: BackgroundTasks, user: User = Depends(get_current_user)):
+    """
+    Rută combinată care sincronizează datele de bază (Facultăți, Profesori, Săli)
+    urmate imediat de Orar.
+    """
+    check_admin(user)
+    # Apelăm wrapper-ul cu funcția care le execută pe ambele
+    bg.add_task(run_sync_with_logging, sync_baza_si_orar_logic, "Bază + Orar")
+    return {"message": "Sincronizarea combinată (Bază + Orar) a pornit în fundal."}
+
 @router.get("/sync/history", response_model=List[SyncHistoryResponse])
 async def get_sync_history(
     db: Session = Depends(get_db), 
@@ -348,3 +365,34 @@ async def get_sync_history(
     
     return history
 
+@router.get("/sync/settings")
+async def get_sync_settings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    '''Returnează configurația actuală pentru sincronizarea automată'''
+    
+    check_admin(user)
+    status = db.query(SistemStatus).first()
+    
+    return status
+
+@router.post("/sync/settings")
+async def update_sync_settings(
+    settings: SyncSettingsUpdate, 
+    db: Session = Depends(get_db), 
+    user: User = Depends(get_current_user)
+):
+    '''Actualizează modul în care sistemul execută sincronizările automate.'''
+    
+    check_admin(user)
+    status = db.query(SistemStatus).first()
+    
+    if not status:
+        status = SistemStatus()
+        db.add(status)
+    
+    # Actualizăm câmpurile folosind datele validate de Pydantic
+    status.auto_sync_enabled = settings.auto_sync_enabled
+    status.sync_interval = settings.sync_interval
+    status.sync_time = settings.sync_time
+    
+    db.commit()
+    return {"message": "Setări de sincronizare actualizate cu succes."}

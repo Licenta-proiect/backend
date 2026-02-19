@@ -159,6 +159,11 @@ class SistemStatus(Base):
     is_updating = Column(Boolean, default=False)
     last_sync = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     message = Column(String, nullable=True)
+    
+    # --- Coloane pentru setările de sincronizare ---
+    auto_sync_enabled = Column(Boolean, default=True)
+    sync_interval = Column(String, default="weekly") # daily, weekly sau monthly
+    sync_time = Column(String, default="00:00")     # Format "HH:MM"
 
 class IstoricSincronizare(Base):
     __tablename__ = "istoric_sincronizari"
