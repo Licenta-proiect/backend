@@ -3,7 +3,7 @@ import random
 import httpx
 import asyncio
 from app.services.scraper import clean_val
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, distinct
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.models.models import Orar, Profesor, Sala, Subgrupa, Facultate
@@ -14,10 +14,6 @@ BASE_URLS = {
     "prof": "https://orar.usv.ro/orar/vizualizare/data/orarSPG.php?mod=prof&ID={id}&json",
     "sala": "https://orar.usv.ro/orar/vizualizare/data/orarSPG.php?mod=sala&ID={id}&json"
 }
-
-# Seturi globale (sau pasate) pentru a colecta ID-urile detectate în timpul scraping-ului
-profesori_detectati = set()
-sali_detectate = set()
 
 async def fetch_json(client, url):
     """
@@ -40,40 +36,32 @@ async def process_and_save(db: Session, data, source_tag):
     if not data or not isinstance(data, list) or len(data) < 2:
         return
 
-    evenimente = data[0] # Lista principală de ore de curs/lab
-    mapping_grupe = data[1] # Dicționarul care leagă ID-ul evenimentului de numele grupei
+    evenimente = data[0]
+    mapping_grupe = data[1]
 
     for ev in evenimente:
         ev_id = int(ev["id"])
         if ev_id == 0: continue
 
-        # --- COLECTARE ID-URI PENTRU FAZA URMĂTOARE ---
-        t_id = ev.get("teacherID")
-        r_id = ev.get("roomId")
-        if t_id and t_id != "0": profesori_detectati.add(int(t_id))
-        if r_id and r_id != "0": sali_detectate.add(int(r_id))
+        t_id = int(ev["teacherID"]) if ev.get("teacherID") and ev["teacherID"] != "0" else None
+        r_id = int(ev["roomId"]) if ev.get("roomId") and ev["roomId"] != "0" else None
 
-        # Determinăm numele grupei folosind mapping-ul de la finalul JSON-ului
-        # Aceasta transformă ID-ul intern în text lizibil (ex: "3132a")
         lista_info = mapping_grupe.get(str(ev_id), ["Nespecificat"])
         nume_grupa = "; ".join(lista_info)
 
-        # Actualizăm titlurile academice dacă profesorul există
-        if t_id and t_id != "0":
-            prof = db.query(Profesor).filter(Profesor.id == int(t_id)).first()
+        if t_id:
+            prof = db.query(Profesor).filter(Profesor.id == t_id).first()
             if prof:
                 prof.positionShortName = clean_val(ev.get("positionShortName"))
                 prof.phdShortName = clean_val(ev.get("phdShortName"))
                 prof.otherTitle = clean_val(ev.get("otherTitle"))
 
-        # Folosim db.merge pentru a gestiona cheia compusă (id, idURL).
-        # Dacă combinația ID curs + Sursă există, se face update; altfel, insert.
         db.merge(Orar(
             id=ev_id,
-            idURL=source_tag, # ex: "g49", "p13", "s24"
+            idURL=source_tag,
             typeShortName=clean_val(ev.get("typeShortName")),
-            teacherID=int(ev["teacherID"]) if ev.get("teacherID") and ev["teacherID"] != "0" else None,
-            roomId=int(ev["roomId"]) if ev.get("roomId") and ev["roomId"] != "0" else None,
+            teacherID=t_id,
+            roomId=r_id,
             topicLongName=clean_val(ev.get("topicLongName")),
             topicShortName=clean_val(ev.get("topicShortName")),
             weekDay=int(ev.get("weekDay", 0)),
@@ -89,10 +77,12 @@ async def process_and_save(db: Session, data, source_tag):
 async def populate():
     """
     Funcția principală de control care parcurge secvențial:
-    1. Grupele FIESC, 2. Toți Profesorii, 3. Toate Sălile.
+    Descărcarea orarului doar pentru grupele selectate. (FIESC)
+    Extragerea ID-urilor unice de profesori din orarul grupelor și descărcarea orarului lor.
+    Extragerea ID-urilor unice de săli din orarul deja descărcat (grupe + profesori) și descărcarea orarului lor.
     """
     db: Session = SessionLocal()
-
+    
     fac_fiesc = db.query(Facultate).filter(Facultate.shortName == "FIESC").first()
     if not fac_fiesc:
         print("❌ Eroare: Nu am găsit facultatea FIESC în DB. Rulează mai întâi scraper.py!")
@@ -100,58 +90,64 @@ async def populate():
     
     ID_FACULTATE_FIESC = fac_fiesc.id
 
-    # 1. PASUL 1: Descarcăm doar GRUPELE FIESC
-    # subgrupe = db.query(Subgrupa).filter(Subgrupa.faculty_id == ID_FACULTATE_FIESC).limit(1).all()
-    subgrupe = db.query(Subgrupa).filter(Subgrupa.id.in_([49, 50, 51, 2333, 2433, 2434])).all()
+    # 1. DEFINIRE GRUPE INITIALE
+    #grupe_tinta = [49, 50, 51, 2333, 2433, 2434]
+    #subgrupe = db.query(Subgrupa).filter(Subgrupa.id.in_(grupe_tinta)).all()
 
-    # 2. PASUL 2: Profesorii de la FIESC (baza inițială)
-    prof_initiali = db.query(Profesor).filter(
-        Profesor.faculty_id == ID_FACULTATE_FIESC
-    ).limit(1).all()
+    subgrupe = db.query(Subgrupa).filter(Subgrupa.faculty_id == ID_FACULTATE_FIESC).all()
 
-    print(f"🚀 Pornim importul...")
+    print(f"🚀 Pornim importul controlat...")
 
     async with httpx.AsyncClient() as client:
-        # Definirea fazelor pentru loop
-        phases = [
-            ("grupa", subgrupe),
-            ("prof", []), # Se va popula dinamic mai jos
-            ("sala", [])  # Se va popula dinamic mai jos
-        ]
+        # --- FAZA 1: DOAR GRUPELE ---
+        print(f"📂 --- Faza 1: GRUPE ({len(subgrupe)} entități) ---")
+        for entity in subgrupe:
+            source_tag = f"g{entity.id}"
+            url = BASE_URLS["grupa"].format(id=entity.id)
+            data = await fetch_json(client, url)
+            if data:
+                await process_and_save(db, data, source_tag)
+                entity.has_schedule = True
+                db.commit()
+            await asyncio.sleep(random.uniform(3.5, 4.0))
 
-        for tag, entities in phases:
-            # Re-evaluăm entitățile pentru fazele 2 și 3 pentru a include ID-urile noi detectate
-            if tag == "prof":
-                for p in prof_initiali: profesori_detectati.add(p.id)
-                entities = db.query(Profesor).filter(
-                    Profesor.id.in_(list(profesori_detectati))
-                ).all()
-            
-            if tag == "sala":
-                entities = db.query(Sala).filter(
-                    Sala.id.in_(list(sali_detectate))
-                ).all()
+        # --- FAZA 2: PROFESORII UNICI DIN ORARUL GRUPELOR ---
+        # Luăm profesorii care apar în orele grupelor descărcate anterior
+        prof_ids_query = db.query(distinct(Orar.teacherID)).filter(
+            Orar.idURL.like('g%'),
+            Orar.teacherID.isnot(None)
+        ).all()
+        prof_ids = [row[0] for row in prof_ids_query]
+        profesor_entities = db.query(Profesor).filter(Profesor.id.in_(prof_ids)).all()
 
-            if not entities: continue
+        print(f"📂 --- Faza 2: PROFESORI DETECTAȚI ({len(profesor_entities)} entități) ---")
+        for entity in profesor_entities:
+            source_tag = f"p{entity.id}"
+            url = BASE_URLS["prof"].format(id=entity.id)
+            data = await fetch_json(client, url)
+            if data:
+                await process_and_save(db, data, source_tag)
+                entity.has_schedule = True
+                db.commit()
+            await asyncio.sleep(random.uniform(3.5, 4.0))
 
-            print(f"📂 --- Faza: {tag.upper()} ({len(entities)} entități) ---")
-            
-            for idx, entity in enumerate(entities):
-                source_tag = f"{tag[0]}{entity.id}"
-                url = BASE_URLS[tag].format(id=entity.id)
-                
-                print(f"⏳ [{idx+1}/{len(entities)}] Descarc {source_tag}...")
-                data = await fetch_json(client, url)
-                
-                if data:
-                    await process_and_save(db, data, source_tag)
-                    
-                    # --- ACTUALIZARE HAS_SCHEDULE ---
-                    entity.has_schedule = True 
-                    
-                    db.commit()
-                
-                await asyncio.sleep(random.uniform(2.0, 2.5))
+        # --- FAZA 3: SĂLILE UNICE DIN TOT ORARUL (GRUPE + PROFESORI) ---
+        sali_ids_query = db.query(distinct(Orar.roomId)).filter(
+            Orar.roomId.isnot(None)
+        ).all()
+        sali_ids = [row[0] for row in sali_ids_query]
+        sali_entities = db.query(Sala).filter(Sala.id.in_(sali_ids)).all()
+
+        print(f"📂 --- Faza 3: SĂLI DETECTATE ({len(sali_entities)} entități) ---")
+        for entity in sali_entities:
+            source_tag = f"s{entity.id}"
+            url = BASE_URLS["sala"].format(id=entity.id)
+            data = await fetch_json(client, url)
+            if data:
+                await process_and_save(db, data, source_tag)
+                entity.has_schedule = True
+                db.commit()
+            await asyncio.sleep(random.uniform(3.5, 4.0))
 
     print("\n✅ Baza de date a fost completată cu succes!")
     db.close()
