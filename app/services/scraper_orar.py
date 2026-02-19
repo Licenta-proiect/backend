@@ -111,7 +111,7 @@ async def populate():
     
     fac_fiesc = db.query(Facultate).filter(Facultate.shortName == "FIESC").first()
     if not fac_fiesc:
-        print("❌ Eroare: Nu am găsit facultatea FIESC în DB. Rulează mai întâi scraper.py!")
+        print("❌ Eroare: Nu am găsit facultatea FIESC în DB!")
         return
     
     ID_FACULTATE_FIESC = fac_fiesc.id
@@ -121,14 +121,17 @@ async def populate():
         Subgrupa.faculty_id == ID_FACULTATE_FIESC
     ).all()
 
-    print(f"🚀 Pornim importul controlat...")
+    total_grupe = len(subgrupe)
+    print(f"🚀 Pornim importul controlat pentru {total_grupe} grupe...")
 
     async with httpx.AsyncClient() as client:
         # --- FAZA 1: DOAR GRUPELE ---
-        print(f"📂 --- Faza 1: GRUPE ({len(subgrupe)} entități) ---")
-        for entity in subgrupe:
+        print(f"📂 --- Faza 1: GRUPE ({total_grupe} entități) ---")
+        for idx, entity in enumerate(subgrupe, 1):
             source_tag = f"g{entity.id}"
             url = BASE_URLS["grupa"].format(id=entity.id)
+            
+            print(f"⏳ [{idx}/{total_grupe}] Descarc orar grupă: {source_tag}")
             data = await fetch_json(client, url)
             if data:
                 await process_and_save(db, data, source_tag)
@@ -136,8 +139,7 @@ async def populate():
                 db.commit()
             await asyncio.sleep(random.uniform(6.0, 7.0))
 
-        # --- FAZA 2: PROFESORII UNICI DIN ORARUL GRUPELOR ---
-        # Luăm profesorii care apar în orele grupelor descărcate anterior
+        # --- FAZA 2: PROFESORII UNICI ---
         prof_ids_query = db.query(distinct(Orar.teacherID)).filter(
             Orar.idURL.like('g%'),
             Orar.teacherID.isnot(None)
@@ -145,10 +147,13 @@ async def populate():
         prof_ids = [row[0] for row in prof_ids_query]
         profesor_entities = db.query(Profesor).filter(Profesor.id.in_(prof_ids)).all()
 
-        print(f"📂 --- Faza 2: PROFESORI DETECTAȚI ({len(profesor_entities)} entități) ---")
-        for entity in profesor_entities:
+        total_profi = len(profesor_entities)
+        print(f"📂 --- Faza 2: PROFESORI DETECTAȚI ({total_profi} entități) ---")
+        for idx, entity in enumerate(profesor_entities, 1):
             source_tag = f"p{entity.id}"
             url = BASE_URLS["prof"].format(id=entity.id)
+            
+            print(f"⏳ [{idx}/{total_profi}] Descarc orar profesor: {source_tag}")
             data = await fetch_json(client, url)
             if data:
                 await process_and_save(db, data, source_tag)
@@ -156,17 +161,20 @@ async def populate():
                 db.commit()
             await asyncio.sleep(random.uniform(6.0, 7.0))
 
-        # --- FAZA 3: SĂLILE UNICE DIN TOT ORARUL (GRUPE + PROFESORI) ---
+        # --- FAZA 3: SĂLILE UNICE ---
         sali_ids_query = db.query(distinct(Orar.roomId)).filter(
             Orar.roomId.isnot(None)
         ).all()
         sali_ids = [row[0] for row in sali_ids_query]
         sali_entities = db.query(Sala).filter(Sala.id.in_(sali_ids)).all()
 
-        print(f"📂 --- Faza 3: SĂLI DETECTATE ({len(sali_entities)} entități) ---")
-        for entity in sali_entities:
+        total_sali = len(sali_entities)
+        print(f"📂 --- Faza 3: SĂLI DETECTATE ({total_sali} entități) ---")
+        for idx, entity in enumerate(sali_entities, 1):
             source_tag = f"s{entity.id}"
             url = BASE_URLS["sala"].format(id=entity.id)
+            
+            print(f"⏳ [{idx}/{total_sali}] Descarc orar sală: {source_tag}")
             data = await fetch_json(client, url)
             if data:
                 await process_and_save(db, data, source_tag)
