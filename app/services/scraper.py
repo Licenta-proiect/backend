@@ -78,7 +78,8 @@ async def populate():
                 shortName=clean_val(s["shortName"]),
                 buildingName=clean_val(s["buildingName"]),
                 capacitate=int(s["capacitate"] or 0),
-                computers=int(s["computers"] or 0)
+                computers=int(s["computers"] or 0),
+                has_schedule=False  
             ))
 
         # 3. PROFESORI
@@ -105,6 +106,7 @@ async def populate():
                     
                 profesor_existent.faculty_id = f_id
                 profesor_existent.departmentName = clean_val(p["departmentName"])
+                profesor_existent.has_schedule = False
             else:
                 # Dacă nu există, îl creăm
                 db.add(Profesor(
@@ -113,7 +115,8 @@ async def populate():
                     firstName=clean_val(p["firstName"]),       
                     emailAddress=new_email,
                     faculty_id=f_id,
-                    departmentName=clean_val(p["departmentName"])
+                    departmentName=clean_val(p["departmentName"]),
+                    has_schedule=False
                 ))
 
         # --- 4. SUBGRUPE cu protecție la Foreign Key ---
@@ -137,7 +140,8 @@ async def populate():
                 studyYear=int(sg["studyYear"]),
                 groupName=clean_val(sg["groupName"]),
                 subgroupIndex=clean_val(sg["subgroupIndex"]),
-                isModular=int(sg["isModular"])
+                isModular=int(sg["isModular"]),
+                has_schedule=False  
             ))
 
        # --- 5. ADMIN (Gestiune inteligentă administrator) ---
