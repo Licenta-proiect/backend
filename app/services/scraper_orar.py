@@ -29,34 +29,48 @@ async def fetch_json(client, url):
     return None
 
 async def process_and_save(db: Session, data, source_tag):
+    """
+    Procesează răspunsul JSON. Sare peste orarele goale de tip [[{}], {}]
+    sau orare care nu conțin evenimente valide.
+    """
+    # 1. Verificare de bază a structurii [[...], {...}]
     if not data or not isinstance(data, list) or len(data) < 2:
-        print(f"⚠️ Date JSON invalide sau mesaje de eroare primite pentru {source_tag}")
+        print(f"⚠️ Date JSON invalide sau incomplete pentru {source_tag}")
         return
 
     evenimente = data[0]
     mapping_grupe = data[1]
 
-    for ev in evenimente:
-        # VERIFICARE: Dacă serverul USV trimite un string în loc de obiect (se întâmplă la erori)
-        if not isinstance(ev, dict):
-            print(f"❌ Element invalid în {source_tag}: Se aștepta dicționar, s-a primit {type(ev)}. Conținut: {ev}")
-            continue
+    # 2. Verificăm dacă lista de evenimente este goală sau conține doar un obiect gol/invalid
+    if not evenimente or not isinstance(evenimente, list):
+        print(f"ℹ️ Orar gol (fără evenimente) pentru {source_tag}")
+        return
 
+    # Verificăm dacă primul element este un obiect valid (evităm [[{}], {}])
+    # Un orar valid trebuie să aibă cel puțin un obiect cu un 'id' diferit de None/0
+    valid_events = [ev for ev in evenimente if isinstance(ev, dict) and ev.get("id") and int(ev.get("id")) != 0]
+    
+    if not valid_events:
+        print(f"ℹ️ Sărit {source_tag}: Nu s-au găsit ore valide (posibil orar gol [[{{}}], {{}}])")
+        return
+
+    # 3. Procesăm doar evenimentele validate
+    for ev in valid_events:
         try:
-            # Aici apărea eroarea KeyError: 'id'
-            if "id" not in ev:
-                print(f"❌ Cheia 'id' lipsește din evenimentul sursei {source_tag}. Chei disponibile: {list(ev.keys())}")
-                continue
-
             ev_id = int(ev["id"])
-            if ev_id == 0: continue
+            
+            # Extragere ID-uri cu fallback
+            t_id_str = ev.get("teacherID", "0")
+            r_id_str = ev.get("roomId", "0")
+            
+            t_id = int(t_id_str) if t_id_str and t_id_str != "0" else None
+            r_id = int(r_id_str) if r_id_str and r_id_str != "0" else None
 
-            t_id = int(ev["teacherID"]) if ev.get("teacherID") and ev["teacherID"] != "0" else None
-            r_id = int(ev["roomId"]) if ev.get("roomId") and ev["roomId"] != "0" else None
-
-            lista_info = mapping_grupe.get(str(ev_id), ["Nespecificat"])
+            # Mapping grupă
+            lista_info = mapping_grupe.get(str(ev_id), ["Nespecificat"]) if isinstance(mapping_grupe, dict) else ["Nespecificat"]
             nume_grupa = "; ".join(lista_info)
 
+            # Update date profesor (dacă există în DB-ul local)
             if t_id:
                 prof = db.query(Profesor).filter(Profesor.id == t_id).first()
                 if prof:
@@ -64,6 +78,7 @@ async def process_and_save(db: Session, data, source_tag):
                     prof.phdShortName = clean_val(ev.get("phdShortName"))
                     prof.otherTitle = clean_val(ev.get("otherTitle"))
 
+            # Merge în tabela Orar
             db.merge(Orar(
                 id=ev_id,
                 idURL=source_tag,
@@ -82,7 +97,7 @@ async def process_and_save(db: Session, data, source_tag):
                 grupa=nume_grupa
             ))
         except Exception as e:
-            print(f"❌ Eroare neașteptată la procesarea orarului {source_tag}: {str(e)}")
+            print(f"❌ Eroare la procesarea unui eveniment din {source_tag}: {str(e)}")
             continue
 
 async def populate():
@@ -100,10 +115,6 @@ async def populate():
         return
     
     ID_FACULTATE_FIESC = fac_fiesc.id
-
-    # 1. DEFINIRE GRUPE INITIALE
-    #grupe_tinta = [49, 50, 51, 2333, 2433, 2434]
-    #subgrupe = db.query(Subgrupa).filter(Subgrupa.id.in_(grupe_tinta)).all()
 
     subgrupe = db.query(Subgrupa).filter(Subgrupa.faculty_id == ID_FACULTATE_FIESC).all()
 
