@@ -346,7 +346,7 @@ async def sync_full_db_orar(bg: BackgroundTasks, user: User = Depends(get_curren
     """
     check_admin(user)
     # Apelăm wrapper-ul cu funcția care le execută pe ambele
-    bg.add_task(run_sync_with_logging, sync_baza_si_orar_logic, "Bază + Orar")
+    bg.add_task(run_sync_with_logging, sync_baza_si_orar_logic, "Baza + Orar")
     return {"message": "Sincronizarea combinată (Bază + Orar) a pornit în fundal."}
 
 @router.get("/sync/history", response_model=List[SyncHistoryResponse])
