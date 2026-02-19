@@ -109,7 +109,7 @@ async def populate():
                 await process_and_save(db, data, source_tag)
                 entity.has_schedule = True
                 db.commit()
-            await asyncio.sleep(random.uniform(3.5, 4.0))
+            await asyncio.sleep(random.uniform(4.0, 5.0))
 
         # --- FAZA 2: PROFESORII UNICI DIN ORARUL GRUPELOR ---
         # Luăm profesorii care apar în orele grupelor descărcate anterior
@@ -129,7 +129,7 @@ async def populate():
                 await process_and_save(db, data, source_tag)
                 entity.has_schedule = True
                 db.commit()
-            await asyncio.sleep(random.uniform(3.5, 4.0))
+            await asyncio.sleep(random.uniform(4.0, 5.0))
 
         # --- FAZA 3: SĂLILE UNICE DIN TOT ORARUL (GRUPE + PROFESORI) ---
         sali_ids_query = db.query(distinct(Orar.roomId)).filter(
@@ -147,7 +147,7 @@ async def populate():
                 await process_and_save(db, data, source_tag)
                 entity.has_schedule = True
                 db.commit()
-            await asyncio.sleep(random.uniform(3.5, 4.0))
+            await asyncio.sleep(random.uniform(4.0, 5.0))
 
     print("\n✅ Baza de date a fost completată cu succes!")
     db.close()
