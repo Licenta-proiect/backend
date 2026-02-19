@@ -116,7 +116,10 @@ async def populate():
     
     ID_FACULTATE_FIESC = fac_fiesc.id
 
-    subgrupe = db.query(Subgrupa).filter(Subgrupa.faculty_id == ID_FACULTATE_FIESC).all()
+    subgrupe = db.query(Subgrupa).filter(
+        Subgrupa.isModular == 0,
+        Subgrupa.faculty_id == ID_FACULTATE_FIESC
+    ).all()
 
     print(f"🚀 Pornim importul controlat...")
 
