@@ -2,6 +2,7 @@
 import httpx
 import asyncio
 import bleach
+import html
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
@@ -21,19 +22,32 @@ async def fetch_data(url):
         return response.json()
 
 def clean_val(val):
-    """Transformă string-urile goale sau cu spații în None pentru DB."""
+    """
+    Decodează entitățile HTML, elimină tag-urile HTML (XSS) 
+    și transformă string-urile goale în None pentru DB.
+    """
     if val is None: 
         return None
-    # 1. Transformă în string și elimină spațiile
-    cleaned = str(val).strip()
+    
+    # 1. Transformă în string
+    cleaned = str(val)
+    
+    # 2. Decodează entitățile HTML (ex: &icirc; -> î, &amp; -> &)
+    cleaned = html.unescape(cleaned)
+    
+    # 3. Elimină spațiile de la început și final
+    cleaned = cleaned.strip()
+    
     if cleaned == "": 
         return None
     
-    # 2. Elimină orice tag-uri HTML (Protectie XSS)
-    # Acesta va transforma "<b>Nume</b>" în "Nume" sau va elimina <script>
+    # 4. Elimină orice tag-uri HTML (Protectie XSS / Sanitizare)
+    # Tags=[] și strip=True elimină tot ce e între < >, nu doar tag-ul
     cleaned = bleach.clean(cleaned, tags=[], strip=True)
     
-    return cleaned
+    # 5. O ultimă verificare în cazul în care bleach a lăsat un string gol
+    cleaned = cleaned.strip()
+    return cleaned if cleaned != "" else None
 
 async def populate():
     db: Session = SessionLocal()
