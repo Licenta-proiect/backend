@@ -35,26 +35,33 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
     try:
         token = await oauth.google.authorize_access_token(request)
         user_info = token.get('userinfo')
+
+        # Această funcție aruncă HTTPException(403) dacă user-ul nu are acces
+        user = await handle_google_login(user_info, db)
+        
+        access_token = create_access_token(data={"sub": user.email})
+        
+        # Construim URL-ul de frontend (localhost:3000/callback)
+        # Adăugăm datele necesare în query parameters
+        frontend_url = f"{os.getenv('FRONTEND_URL')}/callback"
+        params = {
+            "access_token": access_token,
+            "role": user.role,
+            "email": user.email,
+            "firstName": user.firstName,
+            "lastName": user.lastName
+        }
+        
+        query_string = urllib.parse.urlencode(params)
+        return RedirectResponse(url=f"{frontend_url}?{query_string}") 
+    
+    except HTTPException as e:
+        # Dacă este 403 sau altă eroare de business, trimitem mesajul în UI
+        error_msg = urllib.parse.quote(e.detail)
+        return RedirectResponse(url=f"{os.getenv('FRONTEND_URL')}/auth-error?message={error_msg}")
+    
     except Exception:
         raise HTTPException(status_code=400, detail="Eroare comunicare Google")
-
-    user = await handle_google_login(user_info, db)
-    
-    access_token = create_access_token(data={"sub": user.email})
-    
-    # Construim URL-ul de frontend (localhost:3000/callback)
-    # Adăugăm datele necesare în query parameters
-    frontend_url = f"{os.getenv('FRONTEND_URL_CALLBACK')}/callback"
-    params = {
-        "access_token": access_token,
-        "role": user.role,
-        "email": user.email,
-        "firstName": user.firstName,
-        "lastName": user.lastName
-    }
-    
-    query_string = urllib.parse.urlencode(params)
-    return RedirectResponse(url=f"{frontend_url}?{query_string}")
 
 @router.get("/me")
 async def get_me(current_user: User = Depends(get_current_user)):

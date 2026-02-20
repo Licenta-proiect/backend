@@ -85,7 +85,7 @@ async def handle_google_login(user_info: dict, db: Session):
         else:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, 
-                detail="Acces interzis. Doar studenții și profesorii de la FIESC cu orar activ pot accesa sistemul."
+                detail="Doar studenții și profesorii de la FIESC cu orar activ pot accesa sistemul."
             )
 
         # Creăm utilizatorul nou cu teacher_id dacă a fost găsit
