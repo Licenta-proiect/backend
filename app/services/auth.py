@@ -69,7 +69,10 @@ async def handle_google_login(user_info: dict, db: Session):
     
     if not user:
         # 1. Verificăm dacă este profesor (email-ul există în tabelul profesori)
-        profesor_data = db.query(Profesor).filter(Profesor.emailAddress == email).first()
+        profesor_data = db.query(Profesor).filter(
+            Profesor.emailAddress == email,
+            Profesor.has_schedule == True
+        ).first()
         
         teacher_id = None
         if profesor_data:
@@ -82,7 +85,7 @@ async def handle_google_login(user_info: dict, db: Session):
         else:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, 
-                detail="Accesul este permis doar membrilor comunității."
+                detail="Acces interzis. Doar studenții și profesorii de la FIESC cu orar activ pot accesa sistemul."
             )
 
         # Creăm utilizatorul nou cu teacher_id dacă a fost găsit

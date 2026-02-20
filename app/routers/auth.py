@@ -44,7 +44,7 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
     
     # Construim URL-ul de frontend (localhost:3000/callback)
     # Adăugăm datele necesare în query parameters
-    frontend_url = os.getenv("FRONTEND_URL_CALLBACK")
+    frontend_url = f"{os.getenv('FRONTEND_URL_CALLBACK')}/callback"
     params = {
         "access_token": access_token,
         "role": user.role,
