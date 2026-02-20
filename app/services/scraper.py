@@ -100,10 +100,22 @@ async def populate():
                 profesor_existent.lastName = clean_val(p["lastName"])
                 profesor_existent.firstName = clean_val(p["firstName"])
                 
-                # Doar dacă email-ul din orar este diferit de cel din DB, facem set-ul care declanșează sync-ul
-                if profesor_existent.emailAddress != new_email:
-                    profesor_existent.emailAddress = new_email
-                    
+                # Verificăm dacă noul email este valid (nu e null/gol)
+                if new_email is not None:
+                    # Verificăm dacă este diferit de ce avem deja
+                    if profesor_existent.emailAddress != new_email:
+                        # Verificăm dacă profesorul are cont de user creat
+                        # Căutăm în tabela 'users' după emailul actual din tabela 'profesori'
+                        has_user_account = db.query(User).filter(User.email == profesor_existent.emailAddress).first()
+                        
+                        if not has_user_account:
+                            # Dacă NU are cont, putem actualiza emailul în tabela profesori fără riscuri
+                            profesor_existent.emailAddress = new_email
+                            print(f"🔄 Actualizat email pentru profesor ID {p_id}: {new_email}")
+                        else:
+                            # Dacă ARE cont, nu atingem emailul deoarece e gestionat de sistemul de useri
+                            print(f"⚠️ Ignorat update email pentru ID {p_id} (Are cont activ: {profesor_existent.emailAddress})")
+                                
                 profesor_existent.faculty_id = f_id
                 profesor_existent.departmentName = clean_val(p["departmentName"])
                 profesor_existent.has_schedule = False
