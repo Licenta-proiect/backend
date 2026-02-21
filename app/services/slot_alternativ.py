@@ -114,24 +114,26 @@ def parse_weeks_from_info(other_info, parity):
     REGULA: 
     1. Daca other_info contine referinte la saptamani (sapt, Sapt, S), 
        extragem saptamanile de acolo si IGNORAM paritatea.
-    2. Daca other_info e gol sau nu are cifre, folosim bifa de paritate.
+    2. Nu extragem cifre care sunt urmate de 'h' (ex: 1h, 2h).
+    3. Daca other_info e gol, folosim bifa de paritate.
     """
     all_weeks = set(range(1, 15))
     extracted_from_text = set()
 
-    # 1. Verificam daca avem date despre saptamani in text
     if other_info and any(keyword in other_info for keyword in ["Sapt", "sapt", "S", "s."]):
         text = other_info.lower()
         
-        # Gasim intervale de tip 1-10
-        range_matches = re.findall(r'(\d+)\s*-\s*(\d+)', text)
+        # 1. Gasim intervale de tip 1-10 (care nu sunt urmate de 'h')
+        # Regex: cifre-cifre, dar sa nu aiba 'h' imediat dupa
+        range_matches = re.findall(r'(\d+)\s*-\s*(\d+)(?!\s*h)', text)
         for start, end in range_matches:
             s, e = int(start), int(end)
             extracted_from_text.update(range(s, min(e + 1, 15)))
 
-        # Gasim numere individuale (S5, sapt 10, s 9, etc.)
-        # Cautam cifre care pot fi precedate de prefixe specifice
-        single_nums = re.findall(r'(?:s(?:apt)?\.?\s*)?(\d+)', text)
+        # 2. Gasim numere individuale (S5, sapt 10)
+        # Regex: \b(\d+)\b -> numar izolat
+        # (?!\s*h) -> negative lookahead: sa NU fie urmat de 'h'
+        single_nums = re.findall(r'(?:s(?:apt)?\.?\s*)?(\b\d+\b)(?!\s*h)', text)
         for num in single_nums:
             v = int(num)
             if 1 <= v <= 14:
@@ -140,7 +142,6 @@ def parse_weeks_from_info(other_info, parity):
     # 2. LOGICA DE DECIZIE
     if extracted_from_text:
         # Daca am gasit saptamani in text, returnam DOAR acele saptamani (ignore parity)
-        print(extracted_from_text)
         return extracted_from_text
 
     # 3. FALLBACK: Daca textul nu ne-a oferit nimic, folosim paritatea
@@ -159,12 +160,36 @@ def find_alternative_slots(data):
     """
     results = []
     
+    # --- PAS 1: Pre-calculare constrangeri student ---
+    # Structura: {zi: [(start, duration, set_saptamani, nume), ...]}
+    student_days_map = {i: [] for i in range(1, 7)} # Luni-Sambata
+    
+    for i, slot in enumerate(data["student_constraints"]):
+        day = int(slot["weekDay"])
+        if day in student_days_map:
+            weeks = parse_weeks_from_info(slot["otherInfo"], slot["parity"])
+            print(weeks)
+            student_days_map[day].append({
+                "start": int(slot["startHour"]),
+                "duration": int(slot["duration"]),
+                "weeks": weeks,
+                "name": f"student_idx{i}"
+            })
+
+    print('***')
+
+    # --- PAS 2: Procesare alternative ---
     for alt in data["potential_alternatives"]:
+        # Calculam saptamanile alternativei o singura data
         weeks_alt = parse_weeks_from_info(alt["otherInfo"], alt["parity"])
+        print(weeks_alt)
         d_alt = int(alt["weekDay"])
         s_alt = int(alt["startHour"])
         dur_alt = int(alt["duration"])
         e_alt = s_alt + dur_alt
+        
+        # Filtram constrangerile studentului doar pentru ziua curenta
+        relevant_student_slots = student_days_map.get(d_alt, [])
         
         valid_weeks_for_this_alt = []
 
@@ -172,7 +197,7 @@ def find_alternative_slots(data):
         for w in sorted(list(weeks_alt)):
             model = cp_model.CpModel()
             
-            # Intervalul orei la care studentul vrea sa mearga
+            # Intervalul dorit (alternativa)
             interval_alt = model.NewIntervalVar(
                 model.NewConstant(s_alt), 
                 model.NewConstant(dur_alt), 
@@ -181,24 +206,23 @@ def find_alternative_slots(data):
             )
 
             conflict_intervals = []
-            for i, slot in enumerate(data["student_constraints"]):
-                # Verificam daca studentul are ora in ACEEASI ZI si in ACEASTA SAPTAMANA SPECIFICA
-                if int(slot["weekDay"]) == d_alt:
-                    w_student = parse_weeks_from_info(slot["otherInfo"], slot["parity"])
+            for slot in relevant_student_slots:
+                # Verificam daca materia studentului are loc in saptamana 'w'
+                # weeks este un set pre-calculat, deci verificarea este O(1)
+                if w in slot["weeks"]:
+                    s_s = slot["start"]
+                    d_s = slot["duration"]
                     
-                    if w in w_student:
-                        s_s = int(slot["startHour"])
-                        d_s = int(slot["duration"])
-                        
-                        name = f"student_w{w}_idx{i}_{s_s}"
-                        conflict_intervals.append(
-                            model.NewIntervalVar(
-                                model.NewConstant(s_s), 
-                                model.NewConstant(d_s), 
-                                model.NewConstant(s_s + d_s), 
-                                name
-                            )
+                    # Nume unic pentru solver
+                    name = f"{slot['name']}_w{w}_{s_s}"
+                    conflict_intervals.append(
+                        model.NewIntervalVar(
+                            model.NewConstant(s_s), 
+                            model.NewConstant(d_s), 
+                            model.NewConstant(s_s + d_s), 
+                            name
                         )
+                    )
 
             if conflict_intervals:
                 model.AddNoOverlap([interval_alt] + conflict_intervals)
@@ -207,7 +231,6 @@ def find_alternative_slots(data):
             if solver.Solve(model) in (cp_model.OPTIMAL, cp_model.FEASIBLE):
                 valid_weeks_for_this_alt.append(w)
 
-        # Daca am gasit cel putin o saptamana libera, adaugam slotul in lista
         if valid_weeks_for_this_alt:
             results.append({
                 "idURL": alt["idURL"],
@@ -217,7 +240,7 @@ def find_alternative_slots(data):
                 "duration": dur_alt,
                 "teacherID": alt["teacherID"],
                 "roomId": alt["roomId"],
-                "weeks": valid_weeks_for_this_alt, # Raportam doar saptamanile in care studentul poate merge
+                "weeks": valid_weeks_for_this_alt,
                 "topic": alt["topicLongName"],
                 "type": alt["typeLongName"]
             })
