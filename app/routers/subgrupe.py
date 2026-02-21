@@ -75,12 +75,13 @@ async def cauta_sloturi_alternative(
     Căută sloturi alternative pentru o materie specifică, 
     verificând disponibilitatea studentului în funcție de orarul grupei sale.
     """
-    try:
-        # 1. Obținem datele de optimizare
-        data = get_data_for_optimization(db, req)
-        if "error" in data:
-            raise HTTPException(status_code=400, detail=data["error"])
+    
+    # 1. Obținem datele de optimizare
+    data = get_data_for_optimization(db, req)
+    if "error" in data:
+        raise HTTPException(status_code=400, detail=data["error"])
 
+    try:
         # 2. Rulăm algoritmul (fără calendar, doar pe săptămâni 1-14)
         raw_alternatives = find_alternative_slots(data)
 
