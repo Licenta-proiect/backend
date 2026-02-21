@@ -110,33 +110,47 @@ def get_data_for_optimization(db: Session, req: SlotAlternativRequest):
 
 def parse_weeks_from_info(other_info, parity):
     """
-    Determina saptamanile active (1-14) bazat pe paritate si textul otherInfo.
+    Determina saptamanile active (1-14) bazat pe paritate si o logica 
+    complexa de extractie din otherInfo (Sapt. 1-10, S5, S12-14 etc.)
     """
     all_weeks = set(range(1, 15))
     
-    # 1. Filtrare dupa paritate
+    # 1. Filtrare initiala dupa paritate
     if parity == 1: # Saptamani Impare
         weeks = {w for w in all_weeks if w % 2 != 0}
     elif parity == 2: # Saptamani Pare
         weeks = {w for w in all_weeks if w % 2 == 0}
-    else: # Saptamanal (parity 0 sau null)
+    else: 
         weeks = set(all_weeks)
 
-    # 2. Logica simplificata pentru otherInfo (Regex pentru intervale de tip 1-10 sau 8-14)
-    if other_info:
-        # Cautam pattern-uri de tip "1-10", "1-9", "8-14"
-        match = re.search(r'Sapt\.?\s*(\d+)\s*-\s*(\d+)', other_info, re.IGNORECASE)
-        if match:
-            start, end = int(match.group(1)), int(match.group(2))
-            interval_weeks = set(range(start, min(end + 1, 15)))
-            weeks = weeks.intersection(interval_weeks)
-        
-        # Cautam specificari de tip "Sapt. 1,3,5"
-        elif "Sapt." in other_info:
-            specific_weeks = re.findall(r'\b(\d+)\b', other_info)
-            if specific_weeks:
-                interval_weeks = {int(w) for w in specific_weeks if int(w) <= 14}
-                weeks = weeks.intersection(interval_weeks)
+    if not other_info:
+        return weeks
+
+    extracted_weeks = set()
+    
+    # Normalizam textul: eliminam spatii inutile si convertim la lower
+    text = other_info.lower()
+
+    # Pattern pentru intervale: 1-10, 12-14
+    # Cauta cifre separate de cratima (ex: 1-9, 12-14)
+    range_matches = re.findall(r'(\d+)\s*-\s*(\d+)', text)
+    for start, end in range_matches:
+        s, e = int(start), int(end)
+        extracted_weeks.update(range(s, min(e + 1, 15)))
+
+    # Pattern pentru saptamani individuale: s5, sapt 10, s 9, sau chiar ", 7,"
+    # Cautam "s" urmat de cifre sau cifre izolate care nu fac parte dintr-un interval deja procesat
+    # Aceasta va prinde "1h s10", "s5", "1,3,5,7"
+    single_matches = re.findall(r'(?:s(?:apt)?\.?\s*)?(\d+)', text)
+    for val in single_matches:
+        v = int(val)
+        if 1 <= v <= 14:
+            extracted_weeks.add(v)
+
+    # Daca am reusit sa extragem saptamani specifice, facem intersectia cu paritatea
+    # Daca textul este prea ambiguu si nu gasim cifre, ramanem la paritate
+    if extracted_weeks:
+        weeks = weeks.intersection(extracted_weeks)
 
     return weeks
 
@@ -220,8 +234,8 @@ if __name__ == "__main__":
     # Nota: Folosim field-urile Python (snake_case) sau aliases daca avem Config setat
     test_request = SlotAlternativRequest(
         selectedGroupId=44,
-        selectedSubject="Inteligenţă artificială",
-        selectedType="laborator",
+        selectedSubject="Proiectarea Aplicatiilor WEB",
+        selectedType="Laborator",
         attendsCourse=True
     )
 
