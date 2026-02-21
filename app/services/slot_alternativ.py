@@ -30,8 +30,8 @@ def verifica_existenta_materie(db: Session, subgrupa_id: int, materie: str, tip_
     
     row_orar = db.query(Orar).filter(
         Orar.idURL == target_id_url,
-        Orar.topicLongName == materie,
-        Orar.typeLongName == tip_activitate
+        func.lower(Orar.topicLongName) == func.lower(materie),
+        func.lower(Orar.typeLongName) == func.lower(tip_activitate)
     ).first()
     
     return row_orar is not None
@@ -50,7 +50,7 @@ def get_subgrupe_compatibile(db: Session, selected_subgrupa_id: int, materie: st
     potential_groups = db.query(Subgrupa).filter(
         Subgrupa.has_schedule == True,
         Subgrupa.faculty_id == subgrupa_ref.faculty_id,
-        Subgrupa.specializationShortName == subgrupa_ref.specializationShortName,
+        func.lower(Subgrupa.specializationShortName) == func.lower(subgrupa_ref.specializationShortName),
         Subgrupa.studyYear == subgrupa_ref.studyYear,
         Subgrupa.id != selected_subgrupa_id # Excludem grupa proprie
     ).all()
@@ -64,6 +64,8 @@ def get_subgrupe_compatibile(db: Session, selected_subgrupa_id: int, materie: st
     return valid_ids
 
 def get_data_for_optimization(db: Session, req: SlotAlternativRequest):
+    '''Extrage două seturi de date: constrângerile grupului curent (când este ocupat 
+    studentul) și opțiunile de sloturi de la grupele compatibile.'''
     # 1. Verificăm dacă grupa selectată are materia și tipul cerut
     if not verifica_existenta_materie(db, req.selected_group_id, req.selected_subject, req.selected_type):
         return {"error": "Grupa selectată nu are această materie sau tip de activitate în orar."}
@@ -94,8 +96,8 @@ def get_data_for_optimization(db: Session, req: SlotAlternativRequest):
         
         potential_slots = db.query(Orar).filter(
             Orar.idURL.in_(compatible_id_urls),
-            Orar.topicLongName == req.selected_subject,
-            Orar.typeLongName == req.selected_type
+            func.lower(Orar.topicLongName) == func.lower(req.selected_subject),
+            func.lower(Orar.typeLongName) == func.lower(req.selected_type)
         ).all()
 
     # 5. Formatăm datele pentru algoritm
@@ -103,3 +105,36 @@ def get_data_for_optimization(db: Session, req: SlotAlternativRequest):
         "student_constraints": [format_row(row) for row in student_busy_slots],
         "potential_alternatives": [format_row(row) for row in potential_slots]
     }
+
+
+
+if __name__ == "__main__":
+    from app.db.session import SessionLocal
+    import json
+
+    # Datele primite de la frontend simulate prin schema Pydantic
+    # Nota: Folosim field-urile Python (snake_case) sau aliases daca avem Config setat
+    test_request = SlotAlternativRequest(
+        selectedGroupId=44,
+        selectedSubject="Proiectarea Aplicatiilor WEB",
+        selectedType="laborator",
+        attendsCourse=True
+    )
+
+    db_session = SessionLocal()
+    try:
+        print(f"--- Incepem testarea pentru Grupa {test_request.selected_group_id} ---")
+        data = get_data_for_optimization(db_session, test_request)
+        
+        if "error" in data:
+            print(f"❌ Eroare: {data['error']}")
+        else:
+            print(f"✅ Am gasit {len(data['student_constraints'])} constrangeri pentru student.")
+            print(f"✅ Am gasit {len(data['potential_alternatives'])} sloturi alternative potentiale.")
+            # Afisam rezultatul formatat JSON pentru inspectie
+            print(json.dumps(data, indent=4, ensure_ascii=False))
+            
+    except Exception as e:
+        print(f"❌ Eroare neasteptata la testare: {e}")
+    finally:
+        db_session.close()
