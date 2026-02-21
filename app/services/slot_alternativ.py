@@ -4,8 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.models.models import Orar, Subgrupa
 from app.schemas.user import SlotAlternativRequest
-from typing import Set, List, Dict, Any
-from ortools.sat.python import cp_model
+from typing import Set
 import re
 
 def format_row(row):
@@ -153,96 +152,53 @@ def parse_weeks_from_info(other_info, parity):
                     # O saptamana intr-un context valid are de obicei valori mici 1-14
                     extracted_from_text.add(v)
 
-    # 2. LOGICA DE DECIZIE
+    # LOGICA DE DECIZIE
     if extracted_from_text:
         # Daca am gasit saptamani in text, returnam DOAR acele saptamani (ignore parity)
         return extracted_from_text
 
-    # 3. FALLBACK: Daca textul nu ne-a oferit nimic, folosim paritatea
+    # FALLBACK: Daca textul nu ne-a oferit nimic, folosim paritatea
     if parity == 1: # Impare
         return {w for w in all_weeks if w % 2 != 0}
     elif parity == 2: # Pare
         return {w for w in all_weeks if w % 2 == 0}
     
-    # 4. Daca nu avem nimic, tot semestrul
+    # Daca nu avem nimic, tot semestrul
     return all_weeks
 
 def find_alternative_slots(data):
-    """
-    Algoritm CP-SAT care verifica disponibilitatea pentru FIECARE saptamana.
-    Un slot este valid daca studentul este liber in saptamanile in care se tine ora.
-    """
     results = []
-    
-    # --- PAS 1: Pre-calculare constrangeri student ---
-    # Structura: {zi: [(start, duration, set_saptamani, nume), ...]}
-    student_days_map = {i: [] for i in range(1, 7)} # Luni-Sambata
+    student_days_map = {i: [] for i in range(1, 7)}
     
     for i, slot in enumerate(data["student_constraints"]):
         day = int(slot["weekDay"])
         if day in student_days_map:
-            weeks = parse_weeks_from_info(slot["otherInfo"], slot["parity"])
-            print(weeks)
             student_days_map[day].append({
                 "start": int(slot["startHour"]),
-                "duration": int(slot["duration"]),
-                "weeks": weeks,
-                "name": f"student_idx{i}"
+                "end": int(slot["startHour"]) + int(slot["duration"]),
+                "weeks": parse_weeks_from_info(slot["otherInfo"], slot["parity"])
             })
 
-    print('***')
-
-    # --- PAS 2: Procesare alternative ---
     for alt in data["potential_alternatives"]:
-        # Calculam saptamanile alternativei o singura data
         weeks_alt = parse_weeks_from_info(alt["otherInfo"], alt["parity"])
-        print(weeks_alt)
         d_alt = int(alt["weekDay"])
         s_alt = int(alt["startHour"])
-        dur_alt = int(alt["duration"])
-        e_alt = s_alt + dur_alt
+        e_alt = s_alt + int(alt["duration"])
         
-        # Filtram constrangerile studentului doar pentru ziua curenta
         relevant_student_slots = student_days_map.get(d_alt, [])
-        
         valid_weeks_for_this_alt = []
 
-        # Rulam CP-SAT pentru fiecare saptamana in care grupa tinta are ora
         for w in sorted(list(weeks_alt)):
-            model = cp_model.CpModel()
+            has_conflict = False
+            for s_slot in relevant_student_slots:
+                if w in s_slot["weeks"]:
+                    # Verificare clasica de intersectie intervale:
+                    # (StartA < EndB) AND (EndA > StartB)
+                    if s_alt < s_slot["end"] and e_alt > s_slot["start"]:
+                        has_conflict = True
+                        break
             
-            # Intervalul dorit (alternativa)
-            interval_alt = model.NewIntervalVar(
-                model.NewConstant(s_alt), 
-                model.NewConstant(dur_alt), 
-                model.NewConstant(e_alt), 
-                f"alt_w{w}"
-            )
-
-            conflict_intervals = []
-            for slot in relevant_student_slots:
-                # Verificam daca materia studentului are loc in saptamana 'w'
-                # weeks este un set pre-calculat, deci verificarea este O(1)
-                if w in slot["weeks"]:
-                    s_s = slot["start"]
-                    d_s = slot["duration"]
-                    
-                    # Nume unic pentru solver
-                    name = f"{slot['name']}_w{w}_{s_s}"
-                    conflict_intervals.append(
-                        model.NewIntervalVar(
-                            model.NewConstant(s_s), 
-                            model.NewConstant(d_s), 
-                            model.NewConstant(s_s + d_s), 
-                            name
-                        )
-                    )
-
-            if conflict_intervals:
-                model.AddNoOverlap([interval_alt] + conflict_intervals)
-
-            solver = cp_model.CpSolver()
-            if solver.Solve(model) in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+            if not has_conflict:
                 valid_weeks_for_this_alt.append(w)
 
         if valid_weeks_for_this_alt:
@@ -251,14 +207,13 @@ def find_alternative_slots(data):
                 "day": d_alt,
                 "startHour": s_alt,
                 "formattedTime": f"{s_alt//60:02d}:{s_alt%60:02d}",
-                "duration": dur_alt,
+                "duration": alt["duration"],
                 "teacherID": alt["teacherID"],
                 "roomId": alt["roomId"],
                 "weeks": valid_weeks_for_this_alt,
                 "topic": alt["topicLongName"],
                 "type": alt["typeLongName"]
             })
-
     return results
 
 if __name__ == "__main__":
@@ -268,9 +223,9 @@ if __name__ == "__main__":
     # Datele primite de la frontend simulate prin schema Pydantic
     # Nota: Folosim field-urile Python (snake_case) sau aliases daca avem Config setat
     test_request = SlotAlternativRequest(
-        selectedGroupId=44,
-        selectedSubject="Proiectarea Aplicatiilor WEB",
-        selectedType="Laborator",
+        selectedGroupId=49,
+        selectedSubject="Aplicatii integrate pentru intreprinderi",
+        selectedType="laborator",
         attendsCourse=True
     )
 
