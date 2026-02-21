@@ -111,10 +111,9 @@ def parse_weeks_from_info(other_info, parity):
     """
     Determina saptamanile active (1-14). 
     REGULA: 
-    1. Daca other_info contine referinte la saptamani (sapt, Sapt, S), 
-       extragem saptamanile de acolo si IGNORAM paritatea.
-    2. Nu extragem cifre care sunt urmate de 'h' (ex: 1h, 2h).
-    3. Daca other_info e gol, folosim bifa de paritate.
+    1. Daca exista indicii de saptamani (s, S, sapt) in text, extragem tot.
+    2. Suporta intervale de tip: "1-10", "S1-S10", "Sapt 1 - Sapt 10".
+    3. Ignoram cifrele urmate de 'h' (durate).
     """
     all_weeks = set(range(1, 15))
     extracted_from_text = set()
@@ -122,18 +121,22 @@ def parse_weeks_from_info(other_info, parity):
     if other_info:
         text = other_info.lower()
         
-        # 1. Extragem intervalele clare de tipul X-Y
-        # Nu ne mai pasa daca au 'h' in propozitie, cautam pattern-ul cifre-cifre
-        range_matches = re.findall(r'(\d+)\s*-\s*(\d+)', text)
+        # 1. Extragem intervale complexe: cautam (prefix optional + cifra) - (prefix optional + cifra)
+        # Regex: (prefix opțional) (cifra1) cratima (prefix opțional) (cifra2)
+        # Grupurile (\d+) sunt cele care ne intereseaza
+        range_matches = re.findall(r'(?:s(?:apt)?\.?\s*)?(\d+)\s*-\s*(?:s(?:apt)?\.?\s*)?(\d+)', text)
+        
         for start, end in range_matches:
             s, e = int(start), int(end)
             if 1 <= s <= 14 and 1 <= e <= 14:
-                extracted_from_text.update(range(s, min(e + 1, 15)))
+                # Daca ordinea e inversa (ex: 10-1), corectam pentru range
+                low, high = min(s, e), max(s, e)
+                extracted_from_text.update(range(low, min(high + 1, 15)))
 
-        # 2. Extragem saptamani individuale precedate explicit de s, sapt, s. sau S
-        # Regex-ul cauta (s sau sapt sau s.) urmat de spatii si cifre
-        # Aceasta va prinde "S5" din "1h S5" chiar daca exista un 'h' inainte
-        individual_with_prefix = re.findall(r'(?:s(?:apt)?\.?\s*)(\d+)', text)
+        # 2. Extragem saptamani individuale (care nu au fost prinse in intervale sau sunt punctuale)
+        # Folosim prefixe sau context de enumerare (+, virgula)
+        # (?!\s*h) asigura ca nu luam "1h"
+        individual_with_prefix = re.findall(r'(?:s(?:apt)?\.?\s*|\+\s*|\b)(\d+)(?!\s*h)', text)
         for val in individual_with_prefix:
             v = int(val)
             if 1 <= v <= 14:
@@ -224,9 +227,9 @@ if __name__ == "__main__":
     # Nota: Folosim field-urile Python (snake_case) sau aliases daca avem Config setat
     test_request = SlotAlternativRequest(
         selectedGroupId=49,
-        selectedSubject="Aplicatii integrate pentru intreprinderi",
+        selectedSubject="Recunoaşterea formelor",
         selectedType="laborator",
-        attendsCourse=True
+        attendsCourse=False
     )
 
     db_session = SessionLocal()
@@ -237,7 +240,6 @@ if __name__ == "__main__":
         if "error" in data:
             print(f"❌ Eroare: {data['error']}")
         else:
-            
             alternatives = find_alternative_slots(data)
             print(f"S-au gasit {len(alternatives)} sloturi compatibile:")
             for res in alternatives:
