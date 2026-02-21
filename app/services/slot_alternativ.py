@@ -110,61 +110,43 @@ def get_data_for_optimization(db: Session, req: SlotAlternativRequest):
 
 def parse_weeks_from_info(other_info, parity):
     """
-    Determina saptamanile active (1-14).
-    Logica imbunatatita: Textul din otherInfo are prioritate asupra paritatii simple.
+    Determina saptamanile active (1-14). 
+    REGULA: Daca otherInfo contine saptamani, se iau DOAR acelea.
+    Daca nu, se foloseste bifa de paritate.
     """
     all_weeks = set(range(1, 15))
-    
-    # 1. Determinam saptamanile bazate pe paritate (i=1, p=2)
-    if parity == 1:
-        parity_weeks = {w for w in all_weeks if w % 2 != 0}
-    elif parity == 2:
-        parity_weeks = {w for w in all_weeks if w % 2 == 0}
-    else:
-        parity_weeks = set(all_weeks)
-
-    if not other_info:
-        return parity_weeks
-
-    # 2. Extragem TOT ce seamana a numar din text (S5, 1-10, sapt 9)
     extracted_from_text = set()
-    text = other_info.lower()
 
-    # Gasim intervale (ex: 1-10)
-    range_matches = re.findall(r'(\d+)\s*-\s*(\d+)', text)
-    for start, end in range_matches:
-        s, e = int(start), int(end)
-        extracted_from_text.update(range(s, min(e + 1, 15)))
-
-    # Gasim numere izolate (ex: S5, sapt 10, s 9)
-    # Folosim un regex care cauta cifre precedate de S sau Sapt sau doar cifre izolate
-    single_nums = re.findall(r'(?:s(?:apt)?\.?\s*)?(\d+)', text)
-    for num in single_nums:
-        v = int(num)
-        if 1 <= v <= 14:
-            extracted_from_text.add(v)
-
-    # 3. COMBINARE LOGICA:
-    # Daca in text apar specificatii (ex: + 1h S5), saptamanile respective sunt ACTIVE
-    # chiar daca paritatea generala ar spune altceva.
-    # Regula: Rezultatul este REUNIUNEA dintre (Paritate intersectat cu Intervale) si (Saptamani izolate din text)
-    
-    # Daca avem intervale de tip 1-11, respectam paritatea in acele intervale
-    # Dar daca avem "+ 1h S5", saptamana 5 este activa clar.
-    
-    if extracted_from_text:
-        # In orarul USV, textul este de obicei mai "destept" decat bifa de paritate
-        # Verificam daca textul contine intervale lungi
-        has_long_range = any("-" in match for match in re.findall(r'\d+\s*-\s*\d+', text))
+    # 1. Incercam extractia din text (prioritate maxima)
+    if other_info:
+        text = other_info.lower()
         
-        if has_long_range:
-            # Daca e interval lung (1-11), intersectam cu paritatea pentru a nu bloca saptamani in care nu se tine cursul
-            return parity_weeks.intersection(extracted_from_text)
-        else:
-            # Daca sunt doar saptamani punctuale (S5, S12), acelea sunt saptamanile sigure
-            return extracted_from_text
+        # Gasim intervale de tip 1-10, 1-4, etc.
+        range_matches = re.findall(r'(\d+)\s*-\s*(\d+)', text)
+        for start, end in range_matches:
+            s, e = int(start), int(end)
+            extracted_from_text.update(range(s, min(e + 1, 15)))
 
-    return parity_weeks
+        # Gasim numere individuale (S5, sapt 10, s 9 sau doar "1, 2, 3")
+        single_nums = re.findall(r'(?:s(?:apt)?\.?\s*)?(\d+)', text)
+        for num in single_nums:
+            v = int(num)
+            if 1 <= v <= 14:
+                extracted_from_text.add(v)
+
+    # 2. LOGICA DE DECIZIE (Prioritizarea)
+    if extracted_from_text:
+        # Daca am gasit orice referinta la saptamani in text, ignoram paritatea
+        return extracted_from_text
+
+    # 3. Daca textul nu ne-a oferit nimic, folosim paritatea (fallback)
+    if parity == 1: # Saptamani Impare
+        return {w for w in all_weeks if w % 2 != 0}
+    elif parity == 2: # Saptamani Pare
+        return {w for w in all_weeks if w % 2 == 0}
+    
+    # 4. Daca nu avem nici text, nici paritate speciala, returnam tot semestrul
+    return all_weeks
 
 def find_alternative_slots(data):
     """
