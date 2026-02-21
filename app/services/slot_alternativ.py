@@ -111,41 +111,45 @@ def get_data_for_optimization(db: Session, req: SlotAlternativRequest):
 def parse_weeks_from_info(other_info, parity):
     """
     Determina saptamanile active (1-14). 
-    REGULA: Daca otherInfo contine saptamani, se iau DOAR acelea.
-    Daca nu, se foloseste bifa de paritate.
+    REGULA: 
+    1. Daca other_info contine referinte la saptamani (sapt, Sapt, S), 
+       extragem saptamanile de acolo si IGNORAM paritatea.
+    2. Daca other_info e gol sau nu are cifre, folosim bifa de paritate.
     """
     all_weeks = set(range(1, 15))
     extracted_from_text = set()
 
-    # 1. Incercam extractia din text (prioritate maxima)
-    if other_info:
+    # 1. Verificam daca avem date despre saptamani in text
+    if other_info and any(keyword in other_info for keyword in ["Sapt", "sapt", "S", "s."]):
         text = other_info.lower()
         
-        # Gasim intervale de tip 1-10, 1-4, etc.
+        # Gasim intervale de tip 1-10
         range_matches = re.findall(r'(\d+)\s*-\s*(\d+)', text)
         for start, end in range_matches:
             s, e = int(start), int(end)
             extracted_from_text.update(range(s, min(e + 1, 15)))
 
-        # Gasim numere individuale (S5, sapt 10, s 9 sau doar "1, 2, 3")
+        # Gasim numere individuale (S5, sapt 10, s 9, etc.)
+        # Cautam cifre care pot fi precedate de prefixe specifice
         single_nums = re.findall(r'(?:s(?:apt)?\.?\s*)?(\d+)', text)
         for num in single_nums:
             v = int(num)
             if 1 <= v <= 14:
                 extracted_from_text.add(v)
 
-    # 2. LOGICA DE DECIZIE (Prioritizarea)
+    # 2. LOGICA DE DECIZIE
     if extracted_from_text:
-        # Daca am gasit orice referinta la saptamani in text, ignoram paritatea
+        # Daca am gasit saptamani in text, returnam DOAR acele saptamani (ignore parity)
+        print(extracted_from_text)
         return extracted_from_text
 
-    # 3. Daca textul nu ne-a oferit nimic, folosim paritatea (fallback)
-    if parity == 1: # Saptamani Impare
+    # 3. FALLBACK: Daca textul nu ne-a oferit nimic, folosim paritatea
+    if parity == 1: # Impare
         return {w for w in all_weeks if w % 2 != 0}
-    elif parity == 2: # Saptamani Pare
+    elif parity == 2: # Pare
         return {w for w in all_weeks if w % 2 == 0}
     
-    # 4. Daca nu avem nici text, nici paritate speciala, returnam tot semestrul
+    # 4. Daca nu avem nimic, tot semestrul
     return all_weeks
 
 def find_alternative_slots(data):
