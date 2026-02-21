@@ -1,8 +1,24 @@
 # app\services\slot_alternativ.py
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.models.models import Orar, Subgrupa
-from typing import Set
+from app.schemas.user import SlotAlternativRequest
+from typing import Set, List, Dict, Any
+
+def format_row(row):
+    return {
+        "idURL": row.idURL,
+        "teacherID": row.teacherID,
+        "roomId": row.roomId,
+        "topicLongName": row.topicLongName,
+        "typeLongName": row.typeLongName,
+        "weekDay": row.weekDay,
+        "startHour": row.startHour,
+        "duration": row.duration,
+        "parity": row.parity,
+        "otherInfo": row.otherInfo
+    }
 
 def verifica_existenta_materie(db: Session, subgrupa_id: int, materie: str, tip_activitate: str) -> bool:
     """
@@ -47,3 +63,43 @@ def get_subgrupe_compatibile(db: Session, selected_subgrupa_id: int, materie: st
             
     return valid_ids
 
+def get_data_for_optimization(db: Session, req: SlotAlternativRequest):
+    # 1. Verificăm dacă grupa selectată are materia și tipul cerut
+    if not verifica_existenta_materie(db, req.selected_group_id, req.selected_subject, req.selected_type):
+        return {"error": "Grupa selectată nu are această materie sau tip de activitate în orar."}
+
+    # 2. Extragem "intervalele ocupate" pentru grupa selectată (Constrângeri)
+    # Acestea sunt orele la care studentul NU poate merge la o recuperare
+    target_id_url = f"g{req.selected_group_id}"
+    
+    query_student = db.query(Orar).filter(Orar.idURL == target_id_url)
+    
+    # Dacă attends_course este False, eliminăm cursurile din lista de ocupare
+    if not req.attends_course:
+        query_student = query_student.filter(func.lower(Orar.typeLongName) != func.lower("curs"))
+    
+    student_busy_slots = query_student.all()
+
+    # 3. Identificăm grupele compatibile (aceeași specializare, an, etc.)
+    compatible_group_ids = get_subgrupe_compatibile(
+        db, req.selected_group_id, req.selected_subject, req.selected_type
+    )
+
+    # 4. Extragem "sloturile candidate" de la celelalte grupe
+    # Căutăm doar aparițiile materiei și tipului solicitat la grupele compatibile
+    potential_slots = []
+    if compatible_group_ids:
+        # Construim lista de idURL-uri: ["g45", "g46", ...]
+        compatible_id_urls = [f"g{gid}" for gid in compatible_group_ids]
+        
+        potential_slots = db.query(Orar).filter(
+            Orar.idURL.in_(compatible_id_urls),
+            Orar.topicLongName == req.selected_subject,
+            Orar.typeLongName == req.selected_type
+        ).all()
+
+    # 5. Formatăm datele pentru algoritm
+    return {
+        "student_constraints": [format_row(row) for row in student_busy_slots],
+        "potential_alternatives": [format_row(row) for row in potential_slots]
+    }

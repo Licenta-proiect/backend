@@ -1,5 +1,5 @@
 # app\schemas\user.py
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from datetime import datetime
 from app.models.models import UserRole
@@ -58,3 +58,14 @@ class SyncHistoryResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class SlotAlternativRequest(BaseModel):
+    selected_group_id: int = Field(..., alias="selectedGroupId", description="ID-ul subgrupei studentului")
+    selected_subject: str = Field(..., alias="selectedSubject", min_length=1, description="Numele complet al materiei")
+    selected_type: str = Field(..., alias="selectedType", description="Tipul activitatii: Seminar, Laborator sau Proiect")
+    attends_course: bool = Field(..., alias="attendsCourse", description="Daca studentul doreste sa evite suprapunerea cu orele de curs")
+
+    class Config:
+        # Permite folosirea numelor atat in format camelCase (din frontend) 
+        # cat si snake_case (in codul Python)
+        populate_by_name = True
