@@ -76,47 +76,65 @@ async def cauta_sloturi_alternative(
     verificând disponibilitatea studentului în funcție de orarul grupei sale.
     """
     
-    # 1. Obținem datele de optimizare
+    # 1. Obținem datele brute de la serviciu
     data = get_data_for_optimization(db, req)
     if "error" in data:
         raise HTTPException(status_code=400, detail=data["error"])
 
     try:
-        # 2. Rulăm algoritmul (fără calendar, doar pe săptămâni 1-14)
         raw_alternatives = find_alternative_slots(data)
+        if not raw_alternatives:
+            return {
+                "materie": req.selected_subject,
+                "tip": req.selected_type,
+                "total_optiuni": 0,
+                "optiuni": []
+            }
 
+        # --- OPTIMIZARE: FETCH ÎNAINTE DE BUCLĂ ---
+        
+        # Extragem ID-urile unice pentru Subgrupe, Profesori și Săli
+        subgrupa_ids = {int(alt["idURL"].replace('g', '')) for alt in raw_alternatives}
+        profesor_ids = {alt["teacherID"] for alt in raw_alternatives if alt["teacherID"]}
+        sala_ids = {alt["roomId"] for alt in raw_alternatives if alt["roomId"]}
+
+        # Interogări Bulk (o singură interogare per tabelă)
+        subgrupe_db = db.query(Subgrupa).filter(Subgrupa.id.in_(subgrupa_ids)).all()
+        profesori_db = db.query(Profesor).filter(Profesor.id.in_(profesor_ids)).all()
+        sali_db = db.query(Sala).filter(Sala.id.in_(sala_ids)).all()
+
+        # Transformăm listele în dicționare pentru acces rapid după ID
+        map_subgrupe = {s.id: s for s in subgrupe_db}
+        map_profesori = {p.id: f"{p.lastName} {p.firstName}" for p in profesori_db}
+        map_sali = {s.id: s.name for s in sali_db}
+
+        # --- PROCESARE REZULTATE ---
         processed_results = []
 
         for alt in raw_alternatives:
-            # --- CALCUL TIMP ---
+            # Calcul Timp
             s_hour = int(alt["startHour"])
             duration = int(alt["duration"])
             e_hour = s_hour + duration
-            
             ora_start = f"{s_hour // 60:02d}:{s_hour % 60:02d}"
             ora_final = f"{e_hour // 60:02d}:{e_hour % 60:02d}"
 
-            # --- RECUPERARE NUME DIN DB ---
-            # 1. Nume Subgrupă (idURL este de tip 'g44')
-            subgrupa_id = int(alt["idURL"].replace('g', ''))
-            sg_obj = db.query(Subgrupa).filter(Subgrupa.id == subgrupa_id).first()
-            nume_grupa = f"{sg_obj.specializationShortName} • an {sg_obj.studyYear} • {sg_obj.groupName}{sg_obj.subgroupIndex}"
+            # Recuperare date din Mapele create anterior (Fără alte interogări DB aici)
+            sg_id = int(alt["idURL"].replace('g', ''))
+            sg_obj = map_subgrupe.get(sg_id)
+            
+            if sg_obj:
+                nume_grupa = f"{sg_obj.specializationShortName} • an {sg_obj.studyYear} • {sg_obj.groupName}{sg_obj.subgroupIndex}"
+            else:
+                nume_grupa = f"Grupa {sg_id}"
 
-            # 2. Nume Profesor
-            prof_obj = db.query(Profesor).filter(Profesor.id == alt["teacherID"]).first()
-            nume_profesor = f"{prof_obj.lastName} {prof_obj.firstName}" if prof_obj else "Nespecificat"
+            nume_profesor = map_profesori.get(alt["teacherID"], "Nespecificat")
+            nume_sala = map_sali.get(alt["roomId"], "Nespecificat")
 
-            # 3. Nume Sală
-            sala_obj = db.query(Sala).filter(Sala.id == alt["roomId"]).first()
-            nume_sala = sala_obj.name if sala_obj else "Nespecificat"
-
-            # --- MAPARE ZI ---
+            # Mapare Zi
             day_idx = int(alt["day"])
             nume_zi = ZILE_RO.get(day_idx - 1, "Necunoscut")
 
-            # --- FINALIZARE OBIECT ---
-            weeks_list = sorted(alt["weeks"])
-            
             processed_results.append({
                 "grupa": nume_grupa,
                 "zi": nume_zi,
@@ -124,8 +142,8 @@ async def cauta_sloturi_alternative(
                 "ora_final": ora_final,
                 "profesor": nume_profesor,
                 "sala": nume_sala,
-                "saptamani_lista": weeks_list,
-                "saptamani_grupate": group_consecutive_weeks(weeks_list)
+                "saptamani_lista": sorted(alt["weeks"]),
+                "saptamani_grupate": group_consecutive_weeks(alt["weeks"])
             })
 
         return {
