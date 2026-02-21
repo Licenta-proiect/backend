@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.models.models import Orar, Subgrupa
+from app.models.models import Orar, Subgrupa, Profesor, Sala
 from app.schemas.user import SlotAlternativRequest
 from app.services.slot_alternativ import get_data_for_optimization, find_alternative_slots
 
@@ -87,24 +87,45 @@ async def cauta_sloturi_alternative(
         processed_results = []
 
         for alt in raw_alternatives:
-            # Determinăm numele zilei (day e 1-Luni, 2-Marți...)
+            # --- CALCUL TIMP ---
+            s_hour = int(alt["startHour"])
+            duration = int(alt["duration"])
+            e_hour = s_hour + duration
+            
+            ora_start = f"{s_hour // 60:02d}:{s_hour % 60:02d}"
+            ora_final = f"{e_hour // 60:02d}:{e_hour % 60:02d}"
+
+            # --- RECUPERARE NUME DIN DB ---
+            # 1. Nume Subgrupă (idURL este de tip 'g44')
+            subgrupa_id = int(alt["idURL"].replace('g', ''))
+            sg_obj = db.query(Subgrupa).filter(Subgrupa.id == subgrupa_id).first()
+            nume_grupa = f"{sg_obj.specializationShortName} • an {sg_obj.studyYear} • {sg_obj.groupName}{sg_obj.subgroupIndex}"
+
+            # 2. Nume Profesor
+            prof_obj = db.query(Profesor).filter(Profesor.id == alt["teacherID"]).first()
+            nume_profesor = f"{prof_obj.lastName} {prof_obj.firstName}" if prof_obj else "Nespecificat"
+
+            # 3. Nume Sală
+            sala_obj = db.query(Sala).filter(Sala.id == alt["roomId"]).first()
+            nume_sala = sala_obj.name if sala_obj else "Nespecificat"
+
+            # --- MAPARE ZI ---
             day_idx = int(alt["day"])
             nume_zi = ZILE_RO.get(day_idx - 1, "Necunoscut")
 
-            # Pregătim detaliile pe săptămâni
+            # --- FINALIZARE OBIECT ---
             weeks_list = sorted(alt["weeks"])
             
-            # Creăm obiectul îmbogățit
-            enriched_alt = {
-                "idURL": alt["idURL"],
+            processed_results.append({
+                "grupa": nume_grupa,
                 "zi": nume_zi,
-                "ora": alt["formattedTime"],
-                "sala": alt["roomId"],
-                "profesor_id": alt["teacherID"],
+                "ora_start": ora_start,
+                "ora_final": ora_final,
+                "profesor": nume_profesor,
+                "sala": nume_sala,
                 "saptamani_lista": weeks_list,
                 "saptamani_grupate": group_consecutive_weeks(weeks_list)
-            }
-            processed_results.append(enriched_alt)
+            })
 
         return {
             "materie": req.selected_subject,
@@ -115,4 +136,4 @@ async def cauta_sloturi_alternative(
 
     except Exception as e:
         print(f"❌ Eroare: {str(e)}")
-        raise HTTPException(status_code=500, detail="Eroare la procesarea alternativelor.")
+        raise HTTPException(status_code=500, detail=f"Eroare internă: {str(e)}")
