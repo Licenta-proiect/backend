@@ -120,24 +120,38 @@ def parse_weeks_from_info(other_info, parity):
     all_weeks = set(range(1, 15))
     extracted_from_text = set()
 
-    if other_info and any(keyword in other_info for keyword in ["Sapt", "sapt", "S", "s."]):
+    if other_info:
         text = other_info.lower()
         
-        # 1. Gasim intervale de tip 1-10 (care nu sunt urmate de 'h')
-        # Regex: cifre-cifre, dar sa nu aiba 'h' imediat dupa
-        range_matches = re.findall(r'(\d+)\s*-\s*(\d+)(?!\s*h)', text)
+        # 1. Extragem intervalele clare de tipul X-Y
+        # Nu ne mai pasa daca au 'h' in propozitie, cautam pattern-ul cifre-cifre
+        range_matches = re.findall(r'(\d+)\s*-\s*(\d+)', text)
         for start, end in range_matches:
             s, e = int(start), int(end)
-            extracted_from_text.update(range(s, min(e + 1, 15)))
+            if 1 <= s <= 14 and 1 <= e <= 14:
+                extracted_from_text.update(range(s, min(e + 1, 15)))
 
-        # 2. Gasim numere individuale (S5, sapt 10)
-        # Regex: \b(\d+)\b -> numar izolat
-        # (?!\s*h) -> negative lookahead: sa NU fie urmat de 'h'
-        single_nums = re.findall(r'(?:s(?:apt)?\.?\s*)?(\b\d+\b)(?!\s*h)', text)
-        for num in single_nums:
-            v = int(num)
+        # 2. Extragem saptamani individuale precedate explicit de s, sapt, s. sau S
+        # Regex-ul cauta (s sau sapt sau s.) urmat de spatii si cifre
+        # Aceasta va prinde "S5" din "1h S5" chiar daca exista un 'h' inainte
+        individual_with_prefix = re.findall(r'(?:s(?:apt)?\.?\s*)(\d+)', text)
+        for val in individual_with_prefix:
+            v = int(val)
             if 1 <= v <= 14:
                 extracted_from_text.add(v)
+
+        # 3. Tratarea cazului special unde saptamanile sunt enumerate dupa virgula sau +
+        # Daca textul contine deja cuvinte cheie de saptamana, cautam cifre izolate
+        if any(kw in text for kw in ["sapt", "s.", "s "]):
+            # Cautam cifre care nu sunt durate (nu au h lipit de ele)
+            # dar sunt in context de enumerare
+            isolated_nums = re.findall(r'(?<!\d)(\d+)(?!\s*h)', text)
+            for val in isolated_nums:
+                v = int(val)
+                if 1 <= v <= 14:
+                    # Verificam daca nu cumva e ora de start/durata (ex: 18-20)
+                    # O saptamana intr-un context valid are de obicei valori mici 1-14
+                    extracted_from_text.add(v)
 
     # 2. LOGICA DE DECIZIE
     if extracted_from_text:
