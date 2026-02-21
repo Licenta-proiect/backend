@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.models import Orar, Subgrupa
+from app.schemas.user import SlotAlternativRequest
+from app.services.slot_alternativ import get_data_for_optimization, find_alternative_slots
 
 # Inițializezi router-ul
 router = APIRouter(prefix="/subgrupe", tags=["Subgrupe"])
@@ -37,3 +39,42 @@ async def get_materii_subgrupa(id_subgrupa: int, db: Session = Depends(get_db)):
         "id_subgrupa": id_subgrupa,
         "materii": set_materii
     }
+
+@router.post("/cauta-alternative")
+async def cauta_sloturi_alternative(
+    req: SlotAlternativRequest, 
+    db: Session = Depends(get_db)
+):
+    """
+    Căută sloturi alternative pentru o materie specifică, 
+    verificând disponibilitatea studentului în funcție de orarul grupei sale.
+    """
+    try:
+        # 1. Extragem datele necesare (constrângerile studentului și alternativele potențiale)
+        data = get_data_for_optimization(db, req)
+
+        # 2. Verificăm dacă serviciul a returnat o eroare (ex: grupa nu are materia)
+        if "error" in data:
+            raise HTTPException(
+                status_code=400, 
+                detail=data["error"]
+            )
+
+        # 3. Aplicăm algoritmul de verificare a coliziunilor orare
+        alternatives = find_alternative_slots(data)
+
+        # 4. Returnăm lista sortată cronologic (sortarea este deja făcută în serviciu)
+        return {
+            "selected_subject": req.selected_subject,
+            "selected_type": req.selected_type,
+            "count": len(alternatives),
+            "alternatives": alternatives
+        }
+
+    except Exception as e:
+        # Logare eroare pentru debugging
+        print(f"Eroare API cauta-alternative: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail="A apărut o eroare internă la procesarea algoritmului de orar."
+        )
