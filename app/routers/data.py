@@ -52,7 +52,7 @@ async def get_active_grupe(db: Session = Depends(get_db)):
     """
     grupe = db.query(Subgrupa).filter(
         Subgrupa.has_schedule == True
-    ).order_by(Subgrupa.groupName.asc(), Subgrupa.subgroupIndex.asc()).all()
+    ).order_by(Subgrupa.specializationShortName, Subgrupa.groupName.asc(), Subgrupa.subgroupIndex.asc()).all()
     
     return [
         {
