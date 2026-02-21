@@ -142,15 +142,14 @@ def parse_weeks_from_info(other_info, parity):
 
 def find_alternative_slots(data):
     """
-    Utilizeaza CP-SAT pentru a gasi sloturi care nu se suprapun cu programul studentului.
+    Gaseste sloturi alternative verificand coliziunile la intervale de 60 de minute.
     """
-    model = cp_model.CpModel()
+    # Nota: CP-SAT nu este strict necesar pentru o verificare de coliziune simpla, 
+    # dar structura permite extinderea catre constrangeri complexe ulterior.
     
     # --- 1. Maparea constrangerilor studentului ---
-    # Cream o matrice booleană [Saptamana][Zi][Minut] pentru a marca timpul ocupat
-    # Zile: 1-5, Minute: 480 (08:00) pana la 1200 (20:00)
-    # Folosim un dictionar pentru a economisi memorie
-    student_blocked = {} # (sapt, zi, minut) -> True
+    # (saptamana, zi, ora_minut) -> True
+    student_blocked = {} 
 
     for slot in data["student_constraints"]:
         weeks = parse_weeks_from_info(slot["otherInfo"], slot["parity"])
@@ -159,8 +158,9 @@ def find_alternative_slots(data):
         duration = int(slot["duration"])
         
         for w in weeks:
-            for m in range(start, start + duration, 10): # Increment de 10 minute
-                student_blocked[(w, day, m)] = True
+            # Incrementam din 60 in 60 de minute
+            for h in range(start, start + duration, 60): 
+                student_blocked[(w, day, h)] = True
 
     # --- 2. Analiza alternativelor ---
     results = []
@@ -172,20 +172,17 @@ def find_alternative_slots(data):
         duration = int(alt["duration"])
         
         is_feasible = True
-        conflicts = []
 
-        # Verificam suprapunerea pentru fiecare saptamana in care exista ora alternativa
+        # Verificam suprapunerea pentru fiecare interval de 60 min din alternativa
         for w in weeks:
-            for m in range(start, start + duration, 10):
-                if (w, day, m) in student_blocked:
+            for h in range(start, start + duration, 60):
+                if (w, day, h) in student_blocked:
                     is_feasible = False
-                    # Gasim materia cu care se suprapune pentru info
-                    conflicts.append(f"S{w}-Zi{day}")
                     break
-            if not is_feasible: break
+            if not is_feasible: 
+                break
         
         if is_feasible:
-            # Daca e liber, adaugam la rezultate
             results.append({
                 "idURL": alt["idURL"],
                 "day": day,
@@ -194,11 +191,12 @@ def find_alternative_slots(data):
                 "duration": duration,
                 "teacherID": alt["teacherID"],
                 "roomId": alt["roomId"],
-                "weeks": sorted(list(weeks))
+                "weeks": sorted(list(weeks)),
+                "topic": alt["topicLongName"],
+                "type": alt["typeLongName"]
             })
 
     return results
-
 
 if __name__ == "__main__":
     from app.db.session import SessionLocal
