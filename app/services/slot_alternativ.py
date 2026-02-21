@@ -6,30 +6,32 @@ from typing import Set
 
 def verifica_existenta_materie(db: Session, subgrupa_id: int, materie: str, tip_activitate: str) -> bool:
     """
-    Verifică în tabela 'orar' dacă subgrupa are materia și tipul specificat.
+    Verifica in tabela 'orar' daca subgrupa are materia si tipul specificat.
+    Filtrarea se face folosind prefixul 'g' in fata ID-ului subgrupei pentru idURL.
     """
-    # Construim ID-ul URL formatat (care în scraper-ul tău pare să conțină ID-ul grupei)
-    # Dacă în DB idURL este stocat direct ca ID-ul subgrupei, folosim egalitate.
-    rand_orar = db.query(Orar).filter(
-        Orar.idURL == str(subgrupa_id), # Presupunând că idURL mapat este ID-ul subgrupei
+    # Construim ID-ul cautat: g + ID (ex: "g44")
+    target_id_url = f"g{subgrupa_id}"
+    
+    row_orar = db.query(Orar).filter(
+        Orar.idURL == target_id_url,
         Orar.topicLongName == materie,
         Orar.typeLongName == tip_activitate
     ).first()
     
-    return rand_orar is not None
+    return row_orar is not None
 
 def get_subgrupe_compatibile(db: Session, selected_subgrupa_id: int, materie: str, tip_activitate: str) -> Set[int]:
     """
-    Returnează un set de ID-uri de subgrupe la care studentul ar putea merge (aceeași specializare/an).
+    Returneaza un set de ID-uri de subgrupe la care studentul ar putea merge (aceeasi specializare/an).
     """
-    # 1. Preluăm datele de referință ale grupei selectate
+    # 1. Preluam datele de referinta ale grupei selectate
     subgrupa_ref = db.query(Subgrupa).filter(Subgrupa.id == selected_subgrupa_id).first()
     
     if not subgrupa_ref:
         return set()
 
-    # 2. Căutăm subgrupe potențiale (aceeași facultate, specializare, an)
-    potentiale = db.query(Subgrupa).filter(
+    # 2. Cautam subgrupe potentiale (aceeasi facultate, specializare, an)
+    potential_groups = db.query(Subgrupa).filter(
         Subgrupa.has_schedule == True,
         Subgrupa.faculty_id == subgrupa_ref.faculty_id,
         Subgrupa.specializationShortName == subgrupa_ref.specializationShortName,
@@ -37,10 +39,11 @@ def get_subgrupe_compatibile(db: Session, selected_subgrupa_id: int, materie: st
         Subgrupa.id != selected_subgrupa_id # Excludem grupa proprie
     ).all()
 
-    # 3. Filtrăm doar acele grupe care au efectiv materia și tipul în orar
-    id_uri_valide = set()
-    for sg in potentiale:
+    # 3. Filtram doar acele grupe care au efectiv materia si tipul in orar
+    valid_ids = set()
+    for sg in potential_groups:
         if verifica_existenta_materie(db, sg.id, materie, tip_activitate):
-            id_uri_valide.add(sg.id)
+            valid_ids.add(sg.id)
             
-    return id_uri_valide
+    return valid_ids
+
