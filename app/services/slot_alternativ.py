@@ -217,7 +217,10 @@ def find_alternative_slots(data):
                 "topic": alt["topicLongName"],
                 "type": alt["typeLongName"]
             })
-    return results
+
+    sorted_results = sorted(results, key=lambda x: (x["day"], x["startHour"]))
+    
+    return sorted_results
 
 if __name__ == "__main__":
     from app.db.session import SessionLocal
