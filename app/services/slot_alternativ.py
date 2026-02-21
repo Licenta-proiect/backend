@@ -142,56 +142,72 @@ def parse_weeks_from_info(other_info, parity):
 
 def find_alternative_slots(data):
     """
-    Gaseste sloturi alternative verificand coliziunile la intervale de 60 de minute.
+    Gaseste sloturi alternative folosind MODELUL MATEMATIC CP-SAT.
     """
-    # Nota: CP-SAT nu este strict necesar pentru o verificare de coliziune simpla, 
-    # dar structura permite extinderea catre constrangeri complexe ulterior.
-    
-    # --- 1. Maparea constrangerilor studentului ---
-    # (saptamana, zi, ora_minut) -> True
-    student_blocked = {} 
-
-    for slot in data["student_constraints"]:
-        weeks = parse_weeks_from_info(slot["otherInfo"], slot["parity"])
-        day = slot["weekDay"]
-        start = int(slot["startHour"])
-        duration = int(slot["duration"])
-        
-        for w in weeks:
-            # Incrementam din 60 in 60 de minute
-            for h in range(start, start + duration, 60): 
-                student_blocked[(w, day, h)] = True
-
-    # --- 2. Analiza alternativelor ---
     results = []
     
+    # Pentru fiecare alternativa, intrebam Solver-ul: 
+    # "Exista vreo saptamana in care acest slot se suprapune cu orarul studentului?"
     for alt in data["potential_alternatives"]:
-        weeks = parse_weeks_from_info(alt["otherInfo"], alt["parity"])
-        day = alt["weekDay"]
-        start = int(alt["startHour"])
-        duration = int(alt["duration"])
+        model = cp_model.CpModel()
         
-        is_feasible = True
+        weeks_alt = parse_weeks_from_info(alt["otherInfo"], alt["parity"])
+        day_alt = alt["weekDay"]
+        start_alt = int(alt["startHour"])
+        duration_alt = int(alt["duration"])
+        end_alt = start_alt + duration_alt
 
-        # Verificam suprapunerea pentru fiecare interval de 60 min din alternativa
-        for w in weeks:
-            for h in range(start, start + duration, 60):
-                if (w, day, h) in student_blocked:
-                    is_feasible = False
-                    break
-            if not is_feasible: 
-                break
+        # 1. Definim intervalul pentru alternativa pe care o testam
+        # NewIntervalVar(start, duration, end, name)
+        interval_alternativa = model.NewIntervalVar(
+            model.NewConstant(start_alt),
+            model.NewConstant(duration_alt),
+            model.NewConstant(end_alt),
+            "interval_alt"
+        )
+
+        # 2. Colectam toate orele studentului din ACEEASI ZI si ACELEASI SAPTAMANI
+        intervale_conflictuale_student = []
         
-        if is_feasible:
+        for slot in data["student_constraints"]:
+            weeks_student = parse_weeks_from_info(slot["otherInfo"], slot["parity"])
+            
+            # Verificam daca studentul are ore in aceeasi zi si saptamani comune cu alternativa
+            if slot["weekDay"] == day_alt and not weeks_alt.isdisjoint(weeks_student):
+                s_start = int(slot["startHour"])
+                s_dur = int(slot["duration"])
+                s_end = s_start + s_dur
+                
+                # Cream un interval pentru ora studentului
+                student_interval = model.NewIntervalVar(
+                    model.NewConstant(s_start),
+                    model.NewConstant(s_dur),
+                    model.NewConstant(s_end),
+                    f"student_slot_{s_start}"
+                )
+                intervale_conflictuale_student.append(student_interval)
+
+        # 3. CONSTRANGEREA CP-SAT: Toate aceste intervale (alternativa + student)
+        # trebuie sa fie DISJUNCTE (sa nu se suprapuna)
+        if intervale_conflictuale_student:
+            toate_intervalele = [interval_alternativa] + intervale_conflictuale_student
+            model.AddNoOverlap(toate_intervalele)
+
+        # 4. REZOLVARE
+        solver = cp_model.CpSolver()
+        status = solver.Solve(model)
+
+        # Daca solver-ul gaseste o solutie (adica AddNoOverlap nu a fost incalcat)
+        if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
             results.append({
                 "idURL": alt["idURL"],
-                "day": day,
-                "startHour": start,
-                "formattedTime": f"{start//60:02d}:{start%60:02d}",
-                "duration": duration,
+                "day": day_alt,
+                "startHour": start_alt,
+                "formattedTime": f"{start_alt//60:02d}:{start_alt%60:02d}",
+                "duration": duration_alt,
                 "teacherID": alt["teacherID"],
                 "roomId": alt["roomId"],
-                "weeks": sorted(list(weeks)),
+                "weeks": sorted(list(weeks_alt)),
                 "topic": alt["topicLongName"],
                 "type": alt["typeLongName"]
             })
@@ -204,7 +220,7 @@ if __name__ == "__main__":
 
     # Datele primite de la frontend simulate prin schema Pydantic
     # Nota: Folosim field-urile Python (snake_case) sau aliases daca avem Config setat
-    test_data = SlotAlternativRequest(
+    test_request = SlotAlternativRequest(
         selectedGroupId=44,
         selectedSubject="Proiectarea Aplicatiilor WEB",
         selectedType="laborator",
@@ -213,11 +229,18 @@ if __name__ == "__main__":
 
     db_session = SessionLocal()
     try:
-        alternatives = find_alternative_slots(test_data)
-        print(f"S-au gasit {len(alternatives)} sloturi compatibile:")
-        for res in alternatives:
-            print(f"Grupa: {res['idURL']} | Zi: {res['day']} | Ora: {res['formattedTime']} | Saptamani: {res['weeks']}")
+        print(f"--- Incepem testarea pentru Grupa {test_request.selected_group_id} ---")
+        data = get_data_for_optimization(db_session, test_request)
+        
+        if "error" in data:
+            print(f"❌ Eroare: {data['error']}")
+        else:
             
+            alternatives = find_alternative_slots(data)
+            print(f"S-au gasit {len(alternatives)} sloturi compatibile:")
+            for res in alternatives:
+                print(f"Grupa: {res['idURL']} | Zi: {res['day']} | Ora: {res['formattedTime']} | Saptamani: {res['weeks']}")
+                
     except Exception as e:
         print(f"❌ Eroare neasteptata la testare: {e}")
     finally:
