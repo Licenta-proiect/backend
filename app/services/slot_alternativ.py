@@ -141,77 +141,66 @@ def parse_weeks_from_info(other_info, parity):
     return weeks
 
 def find_alternative_slots(data):
-    """
-    Gaseste sloturi alternative folosind MODELUL MATEMATIC CP-SAT.
-    """
+    """Algoritmul CP-SAT pentru gasirea sloturilor fara suprapuneri."""
     results = []
-    
-    # Pentru fiecare alternativa, intrebam Solver-ul: 
-    # "Exista vreo saptamana in care acest slot se suprapune cu orarul studentului?"
     for alt in data["potential_alternatives"]:
         model = cp_model.CpModel()
+        w_alt = parse_weeks_from_info(alt["otherInfo"], alt["parity"])
         
-        weeks_alt = parse_weeks_from_info(alt["otherInfo"], alt["parity"])
-        day_alt = alt["weekDay"]
-        start_alt = int(alt["startHour"])
-        duration_alt = int(alt["duration"])
-        end_alt = start_alt + duration_alt
-
-        # 1. Definim intervalul pentru alternativa pe care o testam
-        # NewIntervalVar(start, duration, end, name)
-        interval_alternativa = model.NewIntervalVar(
-            model.NewConstant(start_alt),
-            model.NewConstant(duration_alt),
-            model.NewConstant(end_alt),
+        # ASIGURAM CONVERSIA LA INT AICI
+        d_alt = int(alt["weekDay"])
+        s_alt = int(alt["startHour"])
+        dur_alt = int(alt["duration"])
+        
+        # Intervalul alternativ - model.NewConstant primeste doar int
+        interval_alt = model.NewIntervalVar(
+            model.NewConstant(s_alt), 
+            model.NewConstant(dur_alt), 
+            model.NewConstant(s_alt + dur_alt), 
             "interval_alt"
         )
 
-        # 2. Colectam toate orele studentului din ACEEASI ZI si ACELEASI SAPTAMANI
-        intervale_conflictuale_student = []
-        
-        for slot in data["student_constraints"]:
-            weeks_student = parse_weeks_from_info(slot["otherInfo"], slot["parity"])
-            
-            # Verificam daca studentul are ore in aceeasi zi si saptamani comune cu alternativa
-            if slot["weekDay"] == day_alt and not weeks_alt.isdisjoint(weeks_student):
-                s_start = int(slot["startHour"])
-                s_dur = int(slot["duration"])
-                s_end = s_start + s_dur
+        conflict_intervals = []
+        for i, slot in enumerate(data["student_constraints"]):
+            # Verificam aceeasi zi (asigurand comparatie intre int)
+            if int(slot["weekDay"]) == d_alt:
+                w_student = parse_weeks_from_info(slot["otherInfo"], slot["parity"])
                 
-                # Cream un interval pentru ora studentului
-                student_interval = model.NewIntervalVar(
-                    model.NewConstant(s_start),
-                    model.NewConstant(s_dur),
-                    model.NewConstant(s_end),
-                    f"student_slot_{s_start}"
-                )
-                intervale_conflictuale_student.append(student_interval)
+                # Daca au saptamani comune, verificam coliziunea orara
+                if not w_alt.isdisjoint(w_student):
+                    # CONVERTIM LA INT DATELE STUDENTULUI
+                    start_s = int(slot["startHour"])
+                    dur_s = int(slot["duration"])
+                    
+                    name = f"student_slot_{i}_{start_s}"
+                    conflict_intervals.append(
+                        model.NewIntervalVar(
+                            model.NewConstant(start_s), 
+                            model.NewConstant(dur_s), 
+                            model.NewConstant(start_s + dur_s), 
+                            name
+                        )
+                    )
 
-        # 3. CONSTRANGEREA CP-SAT: Toate aceste intervale (alternativa + student)
-        # trebuie sa fie DISJUNCTE (sa nu se suprapuna)
-        if intervale_conflictuale_student:
-            toate_intervalele = [interval_alternativa] + intervale_conflictuale_student
-            model.AddNoOverlap(toate_intervalele)
+        if conflict_intervals:
+            model.AddNoOverlap([interval_alt] + conflict_intervals)
 
-        # 4. REZOLVARE
         solver = cp_model.CpSolver()
         status = solver.Solve(model)
 
-        # Daca solver-ul gaseste o solutie (adica AddNoOverlap nu a fost incalcat)
-        if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+        if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             results.append({
                 "idURL": alt["idURL"],
-                "day": day_alt,
-                "startHour": start_alt,
-                "formattedTime": f"{start_alt//60:02d}:{start_alt%60:02d}",
-                "duration": duration_alt,
+                "day": d_alt,
+                "startHour": s_alt,
+                "formattedTime": f"{s_alt//60:02d}:{s_alt%60:02d}",
+                "duration": dur_alt,
                 "teacherID": alt["teacherID"],
                 "roomId": alt["roomId"],
-                "weeks": sorted(list(weeks_alt)),
+                "weeks": sorted(list(w_alt)),
                 "topic": alt["topicLongName"],
                 "type": alt["typeLongName"]
             })
-
     return results
 
 if __name__ == "__main__":
