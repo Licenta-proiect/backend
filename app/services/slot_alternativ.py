@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 from app.models.models import Orar, Subgrupa
 from app.schemas.user import SlotAlternativRequest
 from typing import Set, List, Dict, Any
+from ortools.sat.python import cp_model
+import re
 
 def format_row(row):
     return {
@@ -106,6 +108,96 @@ def get_data_for_optimization(db: Session, req: SlotAlternativRequest):
         "potential_alternatives": [format_row(row) for row in potential_slots]
     }
 
+def parse_weeks_from_info(other_info, parity):
+    """
+    Determina saptamanile active (1-14) bazat pe paritate si textul otherInfo.
+    """
+    all_weeks = set(range(1, 15))
+    
+    # 1. Filtrare dupa paritate
+    if parity == 1: # Saptamani Impare
+        weeks = {w for w in all_weeks if w % 2 != 0}
+    elif parity == 2: # Saptamani Pare
+        weeks = {w for w in all_weeks if w % 2 == 0}
+    else: # Saptamanal (parity 0 sau null)
+        weeks = set(all_weeks)
+
+    # 2. Logica simplificata pentru otherInfo (Regex pentru intervale de tip 1-10 sau 8-14)
+    if other_info:
+        # Cautam pattern-uri de tip "1-10", "1-9", "8-14"
+        match = re.search(r'Sapt\.?\s*(\d+)\s*-\s*(\d+)', other_info, re.IGNORECASE)
+        if match:
+            start, end = int(match.group(1)), int(match.group(2))
+            interval_weeks = set(range(start, min(end + 1, 15)))
+            weeks = weeks.intersection(interval_weeks)
+        
+        # Cautam specificari de tip "Sapt. 1,3,5"
+        elif "Sapt." in other_info:
+            specific_weeks = re.findall(r'\b(\d+)\b', other_info)
+            if specific_weeks:
+                interval_weeks = {int(w) for w in specific_weeks if int(w) <= 14}
+                weeks = weeks.intersection(interval_weeks)
+
+    return weeks
+
+def find_alternative_slots(data):
+    """
+    Utilizeaza CP-SAT pentru a gasi sloturi care nu se suprapun cu programul studentului.
+    """
+    model = cp_model.CpModel()
+    
+    # --- 1. Maparea constrangerilor studentului ---
+    # Cream o matrice booleană [Saptamana][Zi][Minut] pentru a marca timpul ocupat
+    # Zile: 1-5, Minute: 480 (08:00) pana la 1200 (20:00)
+    # Folosim un dictionar pentru a economisi memorie
+    student_blocked = {} # (sapt, zi, minut) -> True
+
+    for slot in data["student_constraints"]:
+        weeks = parse_weeks_from_info(slot["otherInfo"], slot["parity"])
+        day = slot["weekDay"]
+        start = int(slot["startHour"])
+        duration = int(slot["duration"])
+        
+        for w in weeks:
+            for m in range(start, start + duration, 10): # Increment de 10 minute
+                student_blocked[(w, day, m)] = True
+
+    # --- 2. Analiza alternativelor ---
+    results = []
+    
+    for alt in data["potential_alternatives"]:
+        weeks = parse_weeks_from_info(alt["otherInfo"], alt["parity"])
+        day = alt["weekDay"]
+        start = int(alt["startHour"])
+        duration = int(alt["duration"])
+        
+        is_feasible = True
+        conflicts = []
+
+        # Verificam suprapunerea pentru fiecare saptamana in care exista ora alternativa
+        for w in weeks:
+            for m in range(start, start + duration, 10):
+                if (w, day, m) in student_blocked:
+                    is_feasible = False
+                    # Gasim materia cu care se suprapune pentru info
+                    conflicts.append(f"S{w}-Zi{day}")
+                    break
+            if not is_feasible: break
+        
+        if is_feasible:
+            # Daca e liber, adaugam la rezultate
+            results.append({
+                "idURL": alt["idURL"],
+                "day": day,
+                "startHour": start,
+                "formattedTime": f"{start//60:02d}:{start%60:02d}",
+                "duration": duration,
+                "teacherID": alt["teacherID"],
+                "roomId": alt["roomId"],
+                "weeks": sorted(list(weeks))
+            })
+
+    return results
 
 
 if __name__ == "__main__":
@@ -114,7 +206,7 @@ if __name__ == "__main__":
 
     # Datele primite de la frontend simulate prin schema Pydantic
     # Nota: Folosim field-urile Python (snake_case) sau aliases daca avem Config setat
-    test_request = SlotAlternativRequest(
+    test_data = SlotAlternativRequest(
         selectedGroupId=44,
         selectedSubject="Proiectarea Aplicatiilor WEB",
         selectedType="laborator",
@@ -123,16 +215,10 @@ if __name__ == "__main__":
 
     db_session = SessionLocal()
     try:
-        print(f"--- Incepem testarea pentru Grupa {test_request.selected_group_id} ---")
-        data = get_data_for_optimization(db_session, test_request)
-        
-        if "error" in data:
-            print(f"❌ Eroare: {data['error']}")
-        else:
-            print(f"✅ Am gasit {len(data['student_constraints'])} constrangeri pentru student.")
-            print(f"✅ Am gasit {len(data['potential_alternatives'])} sloturi alternative potentiale.")
-            # Afisam rezultatul formatat JSON pentru inspectie
-            print(json.dumps(data, indent=4, ensure_ascii=False))
+        alternatives = find_alternative_slots(test_data)
+        print(f"S-au gasit {len(alternatives)} sloturi compatibile:")
+        for res in alternatives:
+            print(f"Grupa: {res['idURL']} | Zi: {res['day']} | Ora: {res['formattedTime']} | Saptamani: {res['weeks']}")
             
     except Exception as e:
         print(f"❌ Eroare neasteptata la testare: {e}")
