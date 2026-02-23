@@ -118,8 +118,8 @@ async def cauta_sloturi_alternative(
         processed_results = []
 
         for alt in raw_alternatives:
-            # FILTRARE: Păstrăm doar săptămânile care sunt în viitor conform calendarului
-            actual_future_weeks = [w for w in alt["weeks"] if w in future_weeks_set]
+            # Intersectăm săptămânile slotului cu cele care nu au trecut încă
+            actual_future_weeks = sorted(list(set(alt["weeks"]) & future_weeks_set))
             
             # Dacă după filtrare nu mai rămâne nicio săptămână validă, sărim peste acest slot
             if not actual_future_weeks:
@@ -155,7 +155,7 @@ async def cauta_sloturi_alternative(
                 "ora_final": ora_final,
                 "profesor": nume_profesor,
                 "sala": nume_sala,
-                "saptamani_lista": sorted(future_weeks_list),
+                "saptamani_lista": actual_future_weeks,
                 "saptamani_grupate": group_consecutive_weeks(alt["weeks"])
             })
 

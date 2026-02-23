@@ -27,8 +27,11 @@ def get_future_weeks_logic(db: Session):
         try:
             end_date = datetime.strptime(last_date_str, "%Y.%m.%d")
             
-            # Verificăm dacă săptămâna este în viitor (nu s-a terminat duminica la ora 23:59)
-            is_future = end_date.replace(hour=23, minute=59, second=59) >= now
+            # Setăm ora la 23:59:59 pentru a include toată ziua de duminică
+            end_date_limit = end_date.replace(hour=23, minute=59, second=59)
+            
+            # O săptămână este activă dacă nu s-a terminat încă
+            is_future = end_date_limit >= now
             
             if entry.semestru == 1:
                 if is_future:
