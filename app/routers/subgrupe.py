@@ -5,6 +5,7 @@ from app.db.session import get_db
 from app.models.models import Orar, Subgrupa, Profesor, Sala
 from app.schemas.user import SlotAlternativRequest
 from app.services.slot_alternativ import get_data_for_optimization, find_alternative_slots
+from app.services.future_weeks import get_future_weeks_logic
 
 # Inițializezi router-ul
 router = APIRouter(prefix="/subgrupe", tags=["Subgrupe"])
@@ -76,12 +77,17 @@ async def cauta_sloturi_alternative(
     verificând disponibilitatea studentului în funcție de orarul grupei sale.
     """
     
-    # 1. Obținem datele brute de la serviciu
+    # Determinăm semestrul curent și săptămânile care nu au trecut încă
+    current_semester, future_weeks_list = get_future_weeks_logic(db)
+    future_weeks_set = set(future_weeks_list)
+
+    # Obținem datele brute de la serviciu
     data = get_data_for_optimization(db, req)
     if "error" in data:
         raise HTTPException(status_code=400, detail=data["error"])
 
     try:
+        # Rulăm algoritmul de detecție conflicte
         raw_alternatives = find_alternative_slots(data)
         if not raw_alternatives:
             return {
@@ -108,10 +114,17 @@ async def cauta_sloturi_alternative(
         map_profesori = {p.id: f"{p.lastName} {p.firstName}" for p in profesori_db}
         map_sali = {s.id: s.name for s in sali_db}
 
-        # --- PROCESARE REZULTATE ---
+        # Procesare și filtrare săptămâni viitoare
         processed_results = []
 
         for alt in raw_alternatives:
+            # FILTRARE: Păstrăm doar săptămânile care sunt în viitor conform calendarului
+            actual_future_weeks = [w for w in alt["weeks"] if w in future_weeks_set]
+            
+            # Dacă după filtrare nu mai rămâne nicio săptămână validă, sărim peste acest slot
+            if not actual_future_weeks:
+                continue
+
             # Calcul Timp
             s_hour = int(alt["startHour"])
             duration = int(alt["duration"])
@@ -142,7 +155,7 @@ async def cauta_sloturi_alternative(
                 "ora_final": ora_final,
                 "profesor": nume_profesor,
                 "sala": nume_sala,
-                "saptamani_lista": sorted(alt["weeks"]),
+                "saptamani_lista": sorted(future_weeks_list),
                 "saptamani_grupate": group_consecutive_weeks(alt["weeks"])
             })
 
@@ -150,7 +163,8 @@ async def cauta_sloturi_alternative(
             "materie": req.selected_subject,
             "tip": req.selected_type,
             "total_optiuni": len(processed_results),
-            "optiuni": processed_results
+            "optiuni": processed_results,
+            "saptamana_curenta": min(future_weeks_list) if future_weeks_list else None
         }
 
     except Exception as e:
