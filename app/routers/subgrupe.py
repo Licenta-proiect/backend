@@ -158,6 +158,13 @@ async def cauta_sloturi_alternative(
                 "saptamani_lista": actual_future_weeks,
                 "saptamani_grupate": group_consecutive_weeks(alt["weeks"])
             })
+        
+        # DACĂ NU AU RĂMAS OPTIUNI DUPĂ FILTRAREA SĂPTĂMÂNILOR VIITOARE
+        if not processed_results:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Toate sloturile alternative pentru '{req.selected_subject}' s-au desfășurat deja în săptămânile trecute. Nu mai există activități viitoare în acest semestru."
+            )
 
         return {
             "materie": req.selected_subject,
@@ -166,6 +173,10 @@ async def cauta_sloturi_alternative(
             "optiuni": processed_results,
             "saptamana_curenta": min(future_weeks_list) if future_weeks_list else None
         }
+
+    except HTTPException as http_exc:
+        # Re-aruncăm eroarea 400 fără să fie prinsă de Exception-ul de mai jos
+        raise http_exc
 
     except Exception as e:
         print(f"❌ Eroare: {str(e)}")
