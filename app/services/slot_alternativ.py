@@ -88,6 +88,13 @@ def get_data_for_optimization(db: Session, req: SlotAlternativRequest):
         db, req.selected_group_id, req.selected_subject, req.selected_type
     )
 
+    # Dacă nu există nicio altă subgrupă care să aibă această materie
+    if not compatible_group_ids:
+        return {
+            "error": f"Există o singură grupă în anul de studiu și specializarea selectată. "
+            "Prin urmare, nu există alternative pentru recuperare."
+        }
+
     # 4. Extragem "sloturile candidate" de la celelalte grupe
     # Căutăm doar aparițiile materiei și tipului solicitat la grupele compatibile
     potential_slots = []
