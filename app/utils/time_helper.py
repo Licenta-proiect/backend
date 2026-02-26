@@ -5,7 +5,7 @@ from dotenv import load_dotenv, find_dotenv
 
 def get_now():
     """Returnează data din .env dacă există, altfel datetime.now()"""
-    load_dotenv(find_dotenv(), override=True)
+    #load_dotenv(find_dotenv(), override=True)
     
     env_time = os.getenv("APP_CURRENT_TIME")
     if env_time:

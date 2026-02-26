@@ -105,12 +105,10 @@ async def cauta_sloturi_alternative(
             )
         
         if not raw_alternatives:
-            return {
-                "materie": req.selected_subject,
-                "tip": req.selected_type,
-                "total_optiuni": 0,
-                "optiuni": []
-            }
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Nu există rezultate pentru filtrele selectate."
+            )
 
         # --- OPTIMIZARE: FETCH ÎNAINTE DE BUCLĂ ---
         
