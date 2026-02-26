@@ -20,7 +20,7 @@ def cleanup_old_sync_logs(db: Session, days_to_keep: int = 150):
 
 async def run_sync_with_logging(func, tip_sincronizare: str, tip_declansare: str = "Manual"):
     """
-    Execută sincronizarea, loghează procesul și curăță istoria veche.
+    Execută sincronizarea și loghează procesul.
     """
     db: Session = SessionLocal()
     
@@ -49,12 +49,5 @@ async def run_sync_with_logging(func, tip_sincronizare: str, tip_declansare: str
         # 5. Finalizăm log-ul curent
         istoric.data_final = datetime.now(timezone.utc)
         db.commit()
-        
-        # --- AUTO-CLEANUP ---
-        # Curățăm logurile mai vechi de 150 de zile la fiecare rulare
-        try:
-            cleanup_old_sync_logs(db, 150)
-        except Exception as e:
-            print(f"⚠️ Eroare la curățarea istoricului: {e}")
-        
+                
         db.close()
