@@ -94,6 +94,16 @@ async def cauta_sloturi_alternative(
     try:
         # Rulăm algoritmul de detecție conflicte
         raw_alternatives = find_alternative_slots(data)
+
+        # Verificăm dacă am depășit fizic data de final a săptămânii 14
+        is_after_last_week = last_lecture_date and now > last_lecture_date
+        if is_after_last_week:
+            # S-au terminat toate cele 14 săptămâni -> Afișăm statusul (Sesiune/Vacanță/etc.)
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Nu se pot căuta recuperări deoarece suntem în perioada de {current_status.lower()}."
+            )
+        
         if not raw_alternatives:
             return {
                 "materie": req.selected_subject,
@@ -164,17 +174,7 @@ async def cauta_sloturi_alternative(
                 "saptamani_grupate": group_consecutive_weeks(alt["weeks"])
             })
         
-        if not processed_results:
-            # Verificăm dacă am depășit fizic data de final a săptămânii 14
-            is_after_last_week = last_lecture_date and now > last_lecture_date
-
-            if is_after_last_week:
-                # S-au terminat toate cele 14 săptămâni -> Afișăm statusul (Sesiune/Vacanță/etc.)
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"Nu se pot căuta recuperări deoarece suntem în perioada de {current_status.lower()}."
-                )
-            
+        if not processed_results:            
             # Suntem încă în intervalul calendaristic al cursurilor (sau vacanță intra-semestrială)
             # NU afișăm statusul, ci un mesaj despre lipsa sloturilor viitoare
             raise HTTPException(
