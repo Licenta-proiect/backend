@@ -18,13 +18,6 @@ rezervari_grupe = Table(
     Column("subgrupa_id", Integer, ForeignKey("subgrupe.id"), primary_key=True),
 )
 
-rezervari_profesori = Table(
-    "rezervari_profesori",
-    Base.metadata,
-    Column("rezervare_id", Integer, ForeignKey("rezervari.id"), primary_key=True),
-    Column("profesor_id", Integer, ForeignKey("profesori.id"), primary_key=True),
-)
-
 # --- MODELE PRINCIPALE ---
 
 class Facultate(Base):
@@ -150,7 +143,6 @@ class Rezervare(Base):
     sala = relationship("Sala", back_populates="rezervari")
     
     grupe = relationship("Subgrupa", secondary=rezervari_grupe)
-    profesori_ajutatori = relationship("Profesor", secondary=rezervari_profesori)
 
 class SistemStatus(Base):
     __tablename__ = "sistem_status"
