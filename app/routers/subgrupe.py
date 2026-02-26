@@ -103,15 +103,7 @@ async def cauta_sloturi_alternative(
                 status_code=400, 
                 detail=f"Nu se pot căuta recuperări deoarece suntem în perioada de {current_status.lower()}."
             )
-        
-        if not raw_alternatives:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Nu există rezultate pentru filtrele selectate."
-            )
 
-        # --- OPTIMIZARE: FETCH ÎNAINTE DE BUCLĂ ---
-        
         # Extragem ID-urile unice pentru Subgrupe, Profesori și Săli
         subgrupa_ids = {int(alt["idURL"].replace('g', '')) for alt in raw_alternatives}
         profesor_ids = {alt["teacherID"] for alt in raw_alternatives if alt["teacherID"]}
@@ -172,20 +164,20 @@ async def cauta_sloturi_alternative(
                 "saptamani_grupate": group_consecutive_weeks(alt["weeks"])
             })
         
-        if not processed_results:            
-            # Suntem încă în intervalul calendaristic al cursurilor (sau vacanță intra-semestrială)
-            # NU afișăm statusul, ci un mesaj despre lipsa sloturilor viitoare
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Nu mai există sloturi disponibile pentru '{req.selected_subject}' în acest semestru."
-            )
+        info_msg = None
+        if not processed_results:
+            if not raw_alternatives:
+                info_msg = f"Nu există rezultate pentru filtrele selectate."
+            else:
+                info_msg = f"Toate sloturile pentru '{req.selected_subject}' s-au desfășurat deja. Nu mai sunt activități viitoare."
 
         return {
             "materie": req.selected_subject,
             "tip": req.selected_type,
             "total_optiuni": len(processed_results),
             "optiuni": processed_results,
-            "saptamana_curenta": min(future_weeks_list) if future_weeks_list else None
+            "saptamana_curenta": min(future_weeks_list) if future_weeks_list else None,
+            "info_message": info_msg
         }
 
     except HTTPException as http_exc:
