@@ -78,7 +78,7 @@ async def cauta_sloturi_alternative(
     """
     
     # Determinăm semestrul curent și săptămânile care nu au trecut încă
-    current_semester, future_weeks_list = get_future_weeks_logic(db)
+    current_semester, future_weeks_list, current_status = get_future_weeks_logic(db)
     future_weeks_set = set(future_weeks_list)
 
     # Obținem datele brute de la serviciu
@@ -159,8 +159,15 @@ async def cauta_sloturi_alternative(
                 "saptamani_grupate": group_consecutive_weeks(alt["weeks"])
             })
         
-        # DACĂ NU AU RĂMAS OPTIUNI DUPĂ FILTRAREA SĂPTĂMÂNILOR VIITOARE
         if not processed_results:
+            # Cazul 1: Suntem în sesiune, vacanță sau restanțe (săptămânile 1-14 au trecut)
+            if not future_weeks_list:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Nu se pot căuta recuperări în acest moment deoarece suntem în {current_status.lower()}."
+                )
+            
+            # Cazul 2: Mai sunt săptămâni de curs, dar materia respectivă s-a terminat
             raise HTTPException(
                 status_code=400, 
                 detail=f"Toate sloturile alternative pentru '{req.selected_subject}' s-au desfășurat deja în săptămânile trecute. Nu mai există activități viitoare în acest semestru."
