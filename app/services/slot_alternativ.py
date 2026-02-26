@@ -69,7 +69,7 @@ def get_data_for_optimization(db: Session, req: SlotAlternativRequest):
     studentul) și opțiunile de sloturi de la grupele compatibile.'''
     # 1. Verificăm dacă grupa selectată are materia și tipul cerut
     if not verifica_existenta_materie(db, req.selected_group_id, req.selected_subject, req.selected_type):
-        return {"error": "Grupa selectată nu are această materie sau tip de activitate în orar."}
+        return {"info": "Grupa selectată nu are această materie sau tip de activitate în orar."}
 
     # 2. Extragem "intervalele ocupate" pentru grupa selectată (Constrângeri)
     # Acestea sunt orele la care studentul NU poate merge la o recuperare
@@ -91,7 +91,7 @@ def get_data_for_optimization(db: Session, req: SlotAlternativRequest):
     # Dacă nu există nicio altă subgrupă care să aibă această materie
     if not compatible_group_ids:
         return {
-            "error": f"Există o singură grupă în anul de studiu și specializarea selectată. "
+            "info": f"Există o singură grupă în anul de studiu și specializarea selectată. "
             "Prin urmare, nu există alternative pentru recuperare."
         }
 

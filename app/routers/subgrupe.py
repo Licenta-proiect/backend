@@ -90,19 +90,28 @@ async def cauta_sloturi_alternative(
     data = get_data_for_optimization(db, req)
     if "error" in data:
         raise HTTPException(status_code=400, detail=data["error"])
+    
+    if "info" in data:
+        return {
+            "materie": req.selected_subject,
+            "tip": req.selected_type,
+            "total_optiuni": 0,
+            "optiuni": [],
+            "info_message": data["info"] # Mapăm către info_message pentru frontend
+        }
 
+    # Verificăm dacă am depășit fizic data de final a săptămânii 14
+    is_after_last_week = last_lecture_date and now > last_lecture_date
+    if is_after_last_week:
+        # S-au terminat toate cele 14 săptămâni -> Afișăm statusul (Sesiune/Vacanță/etc.)
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Nu se pot căuta recuperări deoarece suntem în perioada de {current_status.lower()}."
+        )
+        
     try:
         # Rulăm algoritmul de detecție conflicte
         raw_alternatives = find_alternative_slots(data)
-
-        # Verificăm dacă am depășit fizic data de final a săptămânii 14
-        is_after_last_week = last_lecture_date and now > last_lecture_date
-        if is_after_last_week:
-            # S-au terminat toate cele 14 săptămâni -> Afișăm statusul (Sesiune/Vacanță/etc.)
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Nu se pot căuta recuperări deoarece suntem în perioada de {current_status.lower()}."
-            )
 
         # Extragem ID-urile unice pentru Subgrupe, Profesori și Săli
         subgrupa_ids = {int(alt["idURL"].replace('g', '')) for alt in raw_alternatives}
