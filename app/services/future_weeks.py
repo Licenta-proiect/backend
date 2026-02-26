@@ -2,13 +2,14 @@
 from datetime import datetime
 from sqlalchemy.orm import Session
 from app.models.models import CalendarUniversitar
+from app.utils.time_helper import get_now
 
 def get_future_weeks_logic(db: Session):
     """
     Determină semestrul curent (Sem 2 începe DOAR după ce toate evenimentele din Sem 1 se termină)
     și returnează o listă cu numerele săptămânilor de curs (1-14) care nu s-au încheiat încă.
     """
-    now = datetime(2026, 12, 1, 23, 0, 0)
+    now = get_now()
     
     #  Preluăm TOATE datele din calendar (inclusiv sesiuni, vacanțe, cu saptamana > 14)
     all_entries = db.query(CalendarUniversitar).all()
@@ -43,6 +44,7 @@ def get_future_weeks_logic(db: Session):
         current_semester = 1
 
     #  Colectăm săptămânile de curs viitoare DOAR pentru semestrul determinat
+    last_lecture_date = None
     active_weeks = []
     
     for entry in all_entries:
@@ -54,6 +56,11 @@ def get_future_weeks_logic(db: Session):
                 end_date = datetime.strptime(last_date_str, "%Y.%m.%d")
                 end_date_limit = end_date.replace(hour=23, minute=59, second=59)
                 
+                # Reținem cea mai târzie dată din săptămâna 14
+                if entry.saptamana <= 14:
+                    if last_lecture_date is None or end_date_limit > last_lecture_date:
+                        last_lecture_date = end_date_limit
+
                 # Săptămâna e validă doar dacă nu s-a terminat duminică la 23:59
                 if end_date_limit >= now:
                     active_weeks.append(entry.saptamana)
@@ -61,4 +68,4 @@ def get_future_weeks_logic(db: Session):
                 continue
 
     # Returnăm semestrul și săptămânile de curs rămase sortate
-    return current_semester, sorted(active_weeks), current_status
+    return current_semester, sorted(active_weeks), current_status, last_lecture_date

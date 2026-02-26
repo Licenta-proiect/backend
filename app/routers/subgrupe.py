@@ -1,4 +1,6 @@
 # app\routers\subgrupe.py
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.session import get_db
@@ -6,6 +8,7 @@ from app.models.models import Orar, Subgrupa, Profesor, Sala
 from app.schemas.user import SlotAlternativRequest
 from app.services.slot_alternativ import get_data_for_optimization, find_alternative_slots
 from app.services.future_weeks import get_future_weeks_logic
+from app.utils.time_helper import get_now
 
 # Inițializezi router-ul
 router = APIRouter(prefix="/subgrupe", tags=["Subgrupe"])
@@ -77,8 +80,10 @@ async def cauta_sloturi_alternative(
     verificând disponibilitatea studentului în funcție de orarul grupei sale.
     """
     
+    now = get_now()
+
     # Determinăm semestrul curent și săptămânile care nu au trecut încă
-    current_semester, future_weeks_list, current_status = get_future_weeks_logic(db)
+    current_semester, future_weeks_list, current_status, last_lecture_date = get_future_weeks_logic(db)
     future_weeks_set = set(future_weeks_list)
 
     # Obținem datele brute de la serviciu
@@ -160,17 +165,21 @@ async def cauta_sloturi_alternative(
             })
         
         if not processed_results:
-            # Cazul 1: Suntem în sesiune, vacanță sau restanțe (săptămânile 1-14 au trecut)
-            if not future_weeks_list:
+            # Verificăm dacă am depășit fizic data de final a săptămânii 14
+            is_after_last_week = last_lecture_date and now > last_lecture_date
+
+            if is_after_last_week:
+                # S-au terminat toate cele 14 săptămâni -> Afișăm statusul (Sesiune/Vacanță/etc.)
                 raise HTTPException(
                     status_code=400, 
-                    detail=f"Nu se pot căuta recuperări în acest moment deoarece suntem în {current_status.lower()}."
+                    detail=f"Nu se pot căuta recuperări deoarece suntem în perioada de {current_status.lower()}."
                 )
             
-            # Cazul 2: Mai sunt săptămâni de curs, dar materia respectivă s-a terminat
+            # Suntem încă în intervalul calendaristic al cursurilor (sau vacanță intra-semestrială)
+            # NU afișăm statusul, ci un mesaj despre lipsa sloturilor viitoare
             raise HTTPException(
                 status_code=400, 
-                detail=f"Toate sloturile alternative pentru '{req.selected_subject}' s-au desfășurat deja în săptămânile trecute. Nu mai există activități viitoare în acest semestru."
+                detail=f"Nu mai există sloturi disponibile pentru '{req.selected_subject}' în acest semestru."
             )
 
         return {
