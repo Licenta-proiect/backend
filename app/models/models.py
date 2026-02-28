@@ -124,22 +124,23 @@ class CerereEmailProfesor(Base):
 class Rezervare(Base):
     __tablename__ = "rezervari"
     id = Column(Integer, primary_key=True)
-    idProfesorTitular = Column(Integer, ForeignKey("profesori.id"))
-    idSala = Column(Integer, ForeignKey("sali.id"))
-    saptamana = Column(Integer)
-    zi = Column(Integer)
+    profesor_id = Column(Integer, ForeignKey("profesori.id"))
+    sala_id = Column(Integer, ForeignKey("sali.id"))
+    materie = Column(String)
     tip = Column(String)
     oraInceput = Column(Integer)
     durata = Column(Integer)
-    capacitate_necesara = Column(Integer)
+    zi = Column(Integer)
+    saptamana = Column(Integer)
     data_calendaristica = Column(Date)
-    materie = Column(String)
+    capacitate_necesara = Column(Integer)
+    
     status = Column(String, default="rezervat")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     motiv_anulare = Column(String, nullable=True)
 
-    profesor_titular = relationship("Profesor", back_populates="rezervari_titular")
+    profesor_titular = relationship("Profesor", back_populates="rezervari_titular", foreign_keys=[profesor_id])
     sala = relationship("Sala", back_populates="rezervari")
     
     grupe = relationship("Subgrupa", secondary=rezervari_grupe)

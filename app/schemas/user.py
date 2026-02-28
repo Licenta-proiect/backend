@@ -11,6 +11,10 @@ class UserBase(BaseModel):
     lastName: str
     role: UserRole = UserRole.STUDENT
 
+    class Config:
+        from_attributes = True
+        use_enum_values = True
+
 # Schema pentru Creare (ce trimiți din front)
 class UserCreate(UserBase):
     pass
