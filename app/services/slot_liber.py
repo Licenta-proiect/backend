@@ -96,13 +96,13 @@ if __name__ == "__main__":
     # 1. Simulăm obiectul Request exact ca în exemplul JSON furnizat de tine
     test_req = SlotLiberRequest(
         email="stoicaalexandra180@gmail.com",
-        materie="Baze de date",
-        grupe_ids=[2431],
-        sali_ids=[24],
+        materie="Criptografie şi securitate informaţională",
+        grupe_ids=[ 49, 50, 51],
+        sali_ids= [ 66, 24, 30],
         durata=2,
-        tip_activitate="Laborator",
-        numar_persoane=15,
-        zi=2, # Marți
+        tip_activitate="Curs",
+        numar_persoane=0,
+        zi=1, # Marți
         ora_start=9
     )
 
@@ -126,7 +126,7 @@ if __name__ == "__main__":
             
             # Afișăm primele 5 rezultate pentru verificare
             for i, c in enumerate(constraints[:]):
-                print(f"   [{i+1}] idURL: {c['idURL']} | Zi: {c['weekDay']} | Start: {c['startHour']} | Materie: {c['topicLongName']}")
+                print(f"   [{i+1}] idURL: {c['id']} | Zi: {c['weekDay']} | Start: {c['startHour']} | Materie: {c['topicLongName']}")
             
             if len(constraints) > 5:
                 print(f"   ... și încă {len(constraints) - 5} înregistrări.")

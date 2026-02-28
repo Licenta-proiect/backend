@@ -9,6 +9,7 @@ import re
 
 def format_row(row):
     return {
+        "id": row.id,
         "idURL": row.idURL,
         "teacherID": row.teacherID,
         "roomId": row.roomId,
