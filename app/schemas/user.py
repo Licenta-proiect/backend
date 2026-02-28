@@ -3,6 +3,7 @@ from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from datetime import datetime
 from app.models.models import UserRole
+from typing import List
 
 # Schema de bază (comună)
 class UserBase(BaseModel):
@@ -72,4 +73,18 @@ class SlotAlternativRequest(BaseModel):
     class Config:
         # Permite folosirea numelor atat in format camelCase (din frontend) 
         # cat si snake_case (in codul Python)
+        populate_by_name = True
+
+class SlotLiberRequest(BaseModel):
+    email: EmailStr
+    materie: str
+    grupe_ids: List[int]
+    sali_ids: List[int]
+    durata: int
+    tip_activitate: str
+    numar_persoane: Optional[int] = None
+    zi: Optional[int] = None
+    ora_start: Optional[int] = None
+
+    class Config:
         populate_by_name = True
