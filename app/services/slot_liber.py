@@ -166,6 +166,42 @@ def find_free_slots_cp_sat(db: Session, constraints: dict, sali_ids: List[int], 
                         
     return free_schedule
 
+def group_slots_for_ui(free_slots_raw: dict):
+    """
+    Transformă output-ul brut al solverului într-o structură optimizată pentru UI.
+    Structura: { week_no: { day_name: [ { sala: name, ore_start: [] } ] } }
+    """
+    day_map = {1: "Luni", 2: "Marți", 3: "Miercuri", 4: "Joi", 5: "Vineri", 6: "Sâmbătă"}
+    grouped = {}
+
+    for week, days in free_slots_raw.items():
+        week_data = {}
+        for day_idx, slots in days.items():
+            if not slots:
+                continue
+            
+            day_name = day_map.get(day_idx, f"Ziua {day_idx}")
+            # Grupăm sloturile după numele sălii în această zi
+            rooms_in_day = {}
+            for s in slots:
+                room_name = s['sala']
+                if room_name not in rooms_in_day:
+                    rooms_in_day[room_name] = []
+                # Adăugăm doar ora de start (ex: "14:00")
+                ora_start = s['formatted'].split(" - ")[0]
+                rooms_in_day[room_name].append(ora_start)
+            
+            # Formatăm pentru UI (listă de obiecte pentru a fi ușor de iterat în frontend)
+            week_data[day_name] = [
+                {"sala": r_name, "ore_posibile": sorted(list(set(starts)))} 
+                for r_name, starts in rooms_in_day.items()
+            ]
+        
+        if week_data:
+            grouped[week] = week_data
+            
+    return grouped
+
 if __name__ == "__main__":
     from app.db.session import SessionLocal
     from app.schemas.user import SlotLiberRequest
@@ -180,7 +216,7 @@ if __name__ == "__main__":
         durata=2,  # 2 ore
         tip_activitate="Curs",
         numar_persoane=0,
-        zi=2,   # Testăm pentru toate zilele săptămânii
+        zi=None,   # Testăm pentru toate zilele săptămânii
         ora_start=8
     )
 
@@ -216,27 +252,21 @@ if __name__ == "__main__":
                 active_weeks=active_weeks # Pasăm săptămânile determinate din calendar
             )
 
-            # 4. Afișare rezultate
-            found_any = False
-            for week in active_weeks:
-                week_has_slots = False
-                for day_idx in range(1, 7):
-                    slots = free_slots_report[week][day_idx]
-                    if slots:
-                        if not week_has_slots:
-                            print(f"\n📅 Săptămâna {week}:")
-                            week_has_slots = True
-                            found_any = True
-                        day_name = ["Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă"][day_idx-1]
-                        print(f"  📍 {day_name}:")
-                        for s in slots:
-                            print(f"    🔓 {s['formatted']} -> {s['sala']}")
-            
-            if not found_any:
+            ui_report = group_slots_for_ui(free_slots_report)
+
+            # 5. Afișare simulată ca în Interfață (Carduri)
+            if not ui_report:
                 print("📭 Nu s-au găsit sloturi libere.")
+            else:
+                for week, days in ui_report.items():
+                    print(f"\n--- 📦 CARD SAPTAMANA {week} ---")
+                    for day_name, rooms in days.items():
+                        print(f"  📍 {day_name}:")
+                        for r in rooms:
+                            # Aici r['ore_posibile'] ar fi conținutul Dropdown-ului
+                            print(f"    🏢 Sala {r['sala']} | 🕒 Dropdown ore start: {r['ore_posibile']}")
 
-        print(f"\n⏱️ Finalizat în {time.time() - start_time:.2f} secunde.")
-
+        print(time.time()-start_time)
     except Exception as e:
         print(f"🔥 Eroare: {e}")
         import traceback
