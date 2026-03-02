@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.models.models import Orar, Subgrupa, Profesor, Sala
 from app.schemas.user import SlotLiberRequest
 from typing import List
+from ortools.sat.python import cp_model
 from .slot_alternativ import format_row, parse_weeks_from_info
 
 def get_profesor_id(db: Session, email: str):
@@ -40,31 +41,31 @@ def verifica_existenta_materie(db: Session, id_profesor: int, id_grupe: List[int
 
 def get_data(db: Session, req: SlotLiberRequest):
     '''Extrage datele din orar pentru profesor,subgrupe și săli'''
-    # 1. Preia ID Profesor din email
+    # Preia ID Profesor din email
     id_prof = get_profesor_id(db, req.email)
     if not id_prof:
         return {"info": f"Profesorul cu email-ul {req.email} nu a fost găsit."}
 
-    # 2. Verifică existența materiei și tipului pentru toți actorii (Prof + Grupe)
+    # Verifică existența materiei și tipului pentru toți actorii (Prof + Grupe)
     if not verifica_existenta_materie(db, id_prof, req.grupe_ids, req.materie, req.tip_activitate):
         return {"info": "Materia sau tipul de activitate nu a fost găsit în orarul profesorului sau al grupelor."}
 
-    # 3. Construiește lista de tag-uri pentru idURL (Profesor, Grupe, Săli)
-    # p + idProf, g + idGrupa, s + idSala
-    target_tags = [f"p{id_prof}"] 
-    target_tags += [f"g{gid}" for gid in req.grupe_ids]
-    target_tags += [f"s{sid}" for sid in req.sali_ids]
+    # Extragem toate datele relevante într-un singur query pentru eficiență
+    tags_prof = [f"p{id_prof}"]
+    tags_grupe = [f"g{gid}" for gid in req.grupe_ids]
+    tags_sali = [f"s{sid}" for sid in req.sali_ids]
 
-    # 4. Extrage toate datele din orar care au idURL în lista construită
-    query = db.query(Orar).filter(Orar.idURL.in_(target_tags))
+    all_tags = tags_prof + tags_grupe + tags_sali
+    # Extrage toate datele din orar care au idURL în lista construită
+    query = db.query(Orar).filter(Orar.idURL.in_(all_tags))
 
-    # 5. Filtrare după ZI (weekDay), dacă este specificată
+    # Filtrare după ZI (weekDay), dacă este specificată
     if req.zi is not None:
         query = query.filter(Orar.weekDay == req.zi)
 
     all_schedule_data = query.all()
 
-    # 6. Filtrare SĂLI după Capacitate (dacă numar_persoane e furnizat)
+    # Filtrare SĂLI după Capacitate (dacă numar_persoane e furnizat)
     # Trebuie să verificăm în tabelul 'sali' dacă id-urile din sali_ids au capacitate >= numar_persoane
     if req.numar_persoane is not None:
         # Căutăm sălile care fie au capacitate suficientă, fie au capacitate 0 (nespecificată)
@@ -84,121 +85,89 @@ def get_data(db: Session, req: SlotLiberRequest):
         tags_sali_invalide = [f"s{sid}" for sid in req.sali_ids if sid not in valid_sala_ids]
         all_schedule_data = [d for d in all_schedule_data if d.idURL not in tags_sali_invalide]
 
-    # 7. Formatăm rezultatul pentru algoritmul de identificare sloturi libere
-    return {"constraints": [format_row(row) for row in all_schedule_data]}
+    rows = query.all()
+    # Structurăm datele în cei 3 vectori ceruți
+    constraints = {
+        "profesor": [format_row(r) for r in rows if r.idURL in tags_prof],
+        "subgrupe": [format_row(r) for r in rows if r.idURL in tags_grupe],
+        "sali": [format_row(r) for r in rows if r.idURL in tags_sali]
+    }
 
-def find_free_slots_with_rooms(db: Session, constraints: List[dict], sali_ids: List[int], duration_minutes: int = 120, target_day: int = None):
-    """
-    Identifică intervalele libere comune profesorului și grupelor, 
-    apoi verifică care din sălile solicitate sunt disponibile în acele intervale.
-    """
-    START_DAY = 60 * 8
-    END_DAY = 60 * 22
-    
-    # 1. Separăm constrângerile: Oameni (p, g) vs Săli (s)
-    people_constraints = []
-    room_constraints = {sid: [] for sid in sali_ids}
-    
-    for c in constraints:
-        active_weeks = parse_weeks_from_info(c.get("otherInfo"), c.get("parity"))
-        info = {
-            "day": int(c["weekDay"]),
-            "start": int(c["startHour"]),
-            "end": int(c["startHour"]) + int(c["duration"]),
-            "weeks": active_weeks
-        }
-        
-        if c["idURL"].startswith('s'):
-            # Extragem ID-ul numeric al sălii din tag-ul "s123"
-            try:
-                sid = int(c["idURL"][1:])
-                if sid in room_constraints:
-                    room_constraints[sid].append(info)
-            except: continue
-        else:
-            people_constraints.append(info)
+    return constraints
 
-    # Obținem numele sălilor pentru un output frumos
+def find_free_slots_cp_sat(db: Session, constraints: dict, sali_ids: List[int], duration_minutes: int, target_day: int):
+    START_DAY, END_DAY = 8 * 60, 20 * 60  # 08:00 - 20:00
+    free_schedule = {w: {d: [] for d in range(1, 7)} for w in range(1, 15)}
+    
+    # Nume săli pentru output
     nume_sali = {s.id: s.name for s in db.query(Sala).filter(Sala.id.in_(sali_ids)).all()}
 
-    free_schedule = {w: {d: [] for d in range(1, 7)} for w in range(1, 15)}
-
     for week in range(1, 15):
-        zile_de_verificat = [target_day] if target_day is not None else range(1, 7)
-        
-        for day in zile_de_verificat:
-            # A. Găsim când sunt LIBERI oamenii (Profesor + Grupe)
-            blocks_people = sorted([
-                (c["start"], c["end"]) 
-                for c in people_constraints 
-                if c["day"] == day and week in c["weeks"]
-            ])
-            
-            people_free_intervals = []
-            curr = START_DAY
-            for b_start, b_end in blocks_people:
-                if b_start - curr >= duration_minutes:
-                    people_free_intervals.append((curr, b_start))
-                if b_end > curr: curr = b_end
-            if END_DAY - curr >= duration_minutes:
-                people_free_intervals.append((curr, END_DAY))
-
-            # B. Pentru fiecare interval în care oamenii sunt liberi, verificăm SĂLILE
-            for p_start, p_end in people_free_intervals:
-                sali_disponibile_interval = []
+        zile = [target_day] if target_day is not None else range(1, 7)
+        for day in zile:
+            for sid in sali_ids:
+                model = cp_model.CpModel()
                 
-                for sid in sali_ids:
-                    # Blocajele acestei săli în această zi/săptămână
-                    blocks_room = [
-                        (rc["start"], rc["end"]) 
-                        for rc in room_constraints[sid] 
-                        if rc["day"] == day and week in rc["weeks"]
-                    ]
-                    
-                    # O sală e liberă dacă niciun blocaj al ei nu se suprapune cu intervalul (p_start, p_end)
-                    # Totuși, sala poate avea un curs la mijlocul intervalului liber al oamenilor.
-                    # Vom căuta sub-intervale în care și sala e liberă.
-                    
-                    curr_r = p_start
-                    sorted_room_blocks = sorted(blocks_room)
-                    
-                    for br_start, br_end in sorted_room_blocks:
-                        if br_start - curr_r >= duration_minutes:
-                            sali_disponibile_interval.append({
-                                "id": sid,
-                                "nume": nume_sali.get(sid, f"Sala {sid}"),
-                                "start": curr_r,
-                                "end": br_start
-                            })
-                        if br_end > curr_r: curr_r = br_end
-                    
-                    if p_end - curr_r >= duration_minutes:
-                        sali_disponibile_interval.append({
-                            "id": sid,
-                            "nume": nume_sali.get(sid, f"Sala {sid}"),
-                            "start": curr_r,
-                            "end": p_end
-                        })
+                # 1. Definim variabila intervalului căutat (Slotul Liber)
+                start_var = model.NewIntVar(START_DAY, END_DAY - duration_minutes, 'start')
+                end_var = model.NewIntVar(START_DAY + duration_minutes, END_DAY, 'end')
+                # Constrângere durată: end - start = durata
+                model.Add(end_var == start_var + duration_minutes)
+                
+                # 2. Colectăm toate blocajele (Profesor + Toate Grupele + Sala curentă)
+                block_list = []
+                # Constrângeri profesor
+                block_list += [c for c in constraints['profesor'] if c['weekDay'] == day and week in parse_weeks_from_info(c['otherInfo'], c['parity'])]
+                # Constrângeri grupe
+                block_list += [c for c in constraints['subgrupe'] if c['weekDay'] == day and week in parse_weeks_from_info(c['otherInfo'], c['parity'])]
+                # Constrângeri sala specifică
+                block_list += [c for c in constraints['sali'] if c['idURL'] == f"s{sid}" and c['weekDay'] == day and week in parse_weeks_from_info(c['otherInfo'], c['parity'])]
 
-                # Grupăm rezultatele pe intervale orare unice pentru a nu repeta
-                if sali_disponibile_interval:
-                    # Sortăm după start pentru consistență
-                    sali_disponibile_interval.sort(key=lambda x: x['start'])
+                # 3. Adăugăm constrângerile de Non-Overlap în model
+                for block in block_list:
+                    b_start = int(block['startHour'])
+                    b_end = b_start + int(block['duration'])
                     
-                    for item in sali_disponibile_interval:
+                    # Logica CP-SAT: Slotul (start_var, end_var) NU trebuie să se suprapună cu (b_start, b_end)
+                    # Adică: slot_end <= b_start SAU slot_start >= b_end
+                    overlap_condition_1 = model.NewBoolVar('overlap_1')
+                    model.Add(end_var <= b_start).OnlyEnforceIf(overlap_condition_1)
+                    
+                    overlap_condition_2 = model.NewBoolVar('overlap_2')
+                    model.Add(start_var >= b_end).OnlyEnforceIf(overlap_condition_2)
+                    
+                    model.AddBoolOr([overlap_condition_1, overlap_condition_2])
+
+                # 4. Rezolvăm și căutăm toate soluțiile posibile pentru acest interval
+                solver = cp_model.CpSolver()
+                
+                # Căutăm soluții în trepte de 30 minute pentru a nu genera mii de rezultate identice
+                current_search_start = START_DAY
+                while current_search_start <= (END_DAY - duration_minutes):
+                    model.Add(start_var >= current_search_start)
+                    status = solver.Solve(model)
+                    
+                    if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+                        found_start = solver.Value(start_var)
+                        found_end = solver.Value(end_var)
+                        
                         free_schedule[week][day].append({
-                            "start": item["start"],
-                            "end": item["end"],
-                            "formatted": f"{item['start']//60:02d}:{item['start']%60:02d} - {item['end']//60:02d}:{item['end']%60:02d}",
-                            "sala": item["nume"]
+                            "start": found_start,
+                            "end": found_end,
+                            "formatted": f"{found_start//60:02d}:{found_start%60:02d} - {found_end//60:02d}:{found_end%60:02d}",
+                            "sala": nume_sali.get(sid, f"Sala {sid}")
                         })
-
+                        # Mergem mai departe cu căutarea (pas de 60 min)
+                        current_search_start = found_start + 60
+                    else:
+                        break
+                        
     return free_schedule
 
 if __name__ == "__main__":
     from app.db.session import SessionLocal
     from app.schemas.user import SlotLiberRequest
-    import json
+    import time
 
     # 1. Simulăm obiectul Request
     test_req = SlotLiberRequest(
@@ -209,61 +178,74 @@ if __name__ == "__main__":
         durata=2,  # 2 ore
         tip_activitate="Curs",
         numar_persoane=0,
-        zi=3,   # Testăm pentru toate zilele săptămânii
-        ora_start=9
+        zi=2,   # Testăm pentru toate zilele săptămânii
+        ora_start=8
     )
 
     # 2. Deschidem sesiunea DB
     db_session = SessionLocal()
     
     try:
-        print(f"--- Testare get_data pentru: {test_req.email} ---")
-        
-        # 3. Apelăm funcția get_data pentru a obține constrângerile (ocupările)
-        result = get_data(db_session, test_req)
-        
-        # 4. Interpretăm rezultatele și apelăm find_free_slots
-        if "info" in result:
-            print(f"ℹ️ Info: {result['info']}")
-        elif "error" in result:
-            print(f"❌ Eroare: {result['error']}")
-        else:
-            constraints = result.get("constraints", [])
-            print(f"✅ Succes! S-au extras {len(constraints)} constrângeri.")
+        print(f"--- 🚀 Pornire Test CP-SAT pentru: {test_req.email} ---")
+        start_time = time.time()
 
-            # --- APELUL NOII FUNCȚII ---
-            print("\n--- Căutare sloturi libere cu Săli ---")
+        # 2. Extragere date structurate (cei 3 vectori)
+        data_result = get_data(db_session, test_req)
+        
+        if "error" in data_result:
+            print(f"❌ Eroare: {data_result['error']}")
+        elif "info" in data_result:
+            print(f"ℹ️ Info: {data_result['info']}")
+        else:
+            # Numărăm totalul de înregistrări găsite
+            total_c = len(data_result['profesor']) + len(data_result['subgrupe']) + len(data_result['sali'])
+            print(f"✅ Date extrase cu succes ({total_c} constrângeri totale).")
+            print(f"   - Profesor: {len(data_result['profesor'])}")
+            print(f"   - Subgrupe: {len(data_result['subgrupe'])}")
+            print(f"   - Săli:     {len(data_result['sali'])}")
+
+            # 3. Execuție Solver CP-SAT
+            print("\n--- 🧠 Rulez Solverul CP-SAT pe 14 săptămâni ---")
             durata_min = test_req.durata * 60 if test_req.durata else 120
             
-            # Pasăm și req.sali_ids pentru a le verifica disponibilitatea individual
-            free_slots_report = find_free_slots_with_rooms(
-                db_session, 
-                constraints, 
-                test_req.sali_ids, 
+            free_slots_report = find_free_slots_cp_sat(
+                db=db_session, 
+                constraints=data_result, 
+                sali_ids=test_req.sali_ids, 
                 duration_minutes=durata_min,
                 target_day=test_req.zi
             )
 
+            # 4. Afișare rezultate
             found_any = False
             for week in range(1, 15):
-                printed_week = False
+                week_has_slots = False
+                output_buffer = []
+                
                 for day_idx in range(1, 7):
                     slots = free_slots_report[week][day_idx]
                     if slots:
-                        if not printed_week:
-                            print(f"\nSăptămâna {week}:")
-                            printed_week = True
-                        found_any = True
+                        if not week_has_slots:
+                            output_buffer.append(f"\n📅 Săptămâna {week}:")
+                            week_has_slots = True
+                            found_any = True
+                        
                         day_name = ["Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă"][day_idx-1]
-                        print(f"  {day_name}:")
+                        output_buffer.append(f"  📍 {day_name}:")
                         for s in slots:
-                            print(f"    - {s['formatted']} -> Liberă în: {s['sala']}")
-            
+                            output_buffer.append(f"    🔓 {s['formatted']} -> {s['sala']}")
+                
+                if week_has_slots:
+                    print("\n".join(output_buffer))
+
             if not found_any:
-                print("  Nu s-au găsit sloturi libere conform criteriilor.")
+                print("📭 Nu s-au găsit sloturi libere care să respecte toate condițiile.")
+
+        end_time = time.time()
+        print(f"\n⏱️ Test finalizat în {end_time - start_time:.2f} secunde.")
 
     except Exception as e:
-        print(f"❌ Eroare critică în timpul testului: {e}")
+        print(f"🔥 Eroare critică: {e}")
         import traceback
         traceback.print_exc()
     finally:
