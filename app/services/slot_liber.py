@@ -5,6 +5,8 @@ from app.models.models import Orar, Subgrupa, Profesor, Sala
 from app.schemas.user import SlotLiberRequest
 from typing import List
 from ortools.sat.python import cp_model
+
+from app.services.future_weeks import get_future_weeks_logic
 from .slot_alternativ import format_row, parse_weeks_from_info
 
 def get_profesor_id(db: Session, email: str):
@@ -85,24 +87,24 @@ def get_data(db: Session, req: SlotLiberRequest):
         tags_sali_invalide = [f"s{sid}" for sid in req.sali_ids if sid not in valid_sala_ids]
         all_schedule_data = [d for d in all_schedule_data if d.idURL not in tags_sali_invalide]
 
-    rows = query.all()
     # Structurăm datele în cei 3 vectori ceruți
     constraints = {
-        "profesor": [format_row(r) for r in rows if r.idURL in tags_prof],
-        "subgrupe": [format_row(r) for r in rows if r.idURL in tags_grupe],
-        "sali": [format_row(r) for r in rows if r.idURL in tags_sali]
+        "profesor": [format_row(r) for r in all_schedule_data if r.idURL in tags_prof],
+        "subgrupe": [format_row(r) for r in all_schedule_data if r.idURL in tags_grupe],
+        "sali": [format_row(r) for r in all_schedule_data if r.idURL in tags_sali]
     }
 
     return constraints
 
-def find_free_slots_cp_sat(db: Session, constraints: dict, sali_ids: List[int], duration_minutes: int, target_day: int):
-    START_DAY, END_DAY = 8 * 60, 20 * 60  # 08:00 - 20:00
+def find_free_slots_cp_sat(db: Session, constraints: dict, sali_ids: List[int], duration_minutes: int, target_day: int, active_weeks: List[int]):
+    """Identifică intervalele libere folosind CP-SAT, doar pentru săptămânile active."""
+    START_DAY, END_DAY = 8 * 60, 21 * 60  # 08:00 - 21:00
     free_schedule = {w: {d: [] for d in range(1, 7)} for w in range(1, 15)}
     
-    # Nume săli pentru output
     nume_sali = {s.id: s.name for s in db.query(Sala).filter(Sala.id.in_(sali_ids)).all()}
 
-    for week in range(1, 15):
+    # Iterăm doar prin săptămânile care nu s-au încheiat încă
+    for week in active_weeks:
         zile = [target_day] if target_day is not None else range(1, 7)
         for day in zile:
             for sid in sali_ids:
@@ -186,26 +188,23 @@ if __name__ == "__main__":
     db_session = SessionLocal()
     
     try:
-        print(f"--- 🚀 Pornire Test CP-SAT pentru: {test_req.email} ---")
+        print(f"--- 🚀 Pornire Test CP-SAT ---")
         start_time = time.time()
 
-        # 2. Extragere date structurate (cei 3 vectori)
+        # 1. Determinăm săptămânile active folosind logica de calendar
+        current_semester, active_weeks, current_status, _ = get_future_weeks_logic(db_session)
+        print(f"📅 Status: {current_status} | Semestrul: {current_semester}")
+        print(f"🗓️ Săptămâni de curs rămase: {active_weeks}")
+
+        # 2. Extragere date structurate
         data_result = get_data(db_session, test_req)
         
-        if "error" in data_result:
-            print(f"❌ Eroare: {data_result['error']}")
-        elif "info" in data_result:
-            print(f"ℹ️ Info: {data_result['info']}")
+        if "error" in data_result or "info" in data_result:
+            print(f"❌ Mesaj: {data_result.get('error') or data_result.get('info')}")
         else:
-            # Numărăm totalul de înregistrări găsite
-            total_c = len(data_result['profesor']) + len(data_result['subgrupe']) + len(data_result['sali'])
-            print(f"✅ Date extrase cu succes ({total_c} constrângeri totale).")
-            print(f"   - Profesor: {len(data_result['profesor'])}")
-            print(f"   - Subgrupe: {len(data_result['subgrupe'])}")
-            print(f"   - Săli:     {len(data_result['sali'])}")
+            print(f"✅ Date extrase ({len(data_result['profesor'])}P, {len(data_result['subgrupe'])}G, {len(data_result['sali'])}S)")
 
-            # 3. Execuție Solver CP-SAT
-            print("\n--- 🧠 Rulez Solverul CP-SAT pe 14 săptămâni ---")
+            # 3. Execuție Solver
             durata_min = test_req.durata * 60 if test_req.durata else 120
             
             free_slots_report = find_free_slots_cp_sat(
@@ -213,39 +212,33 @@ if __name__ == "__main__":
                 constraints=data_result, 
                 sali_ids=test_req.sali_ids, 
                 duration_minutes=durata_min,
-                target_day=test_req.zi
+                target_day=test_req.zi,
+                active_weeks=active_weeks # Pasăm săptămânile determinate din calendar
             )
 
             # 4. Afișare rezultate
             found_any = False
-            for week in range(1, 15):
+            for week in active_weeks:
                 week_has_slots = False
-                output_buffer = []
-                
                 for day_idx in range(1, 7):
                     slots = free_slots_report[week][day_idx]
                     if slots:
                         if not week_has_slots:
-                            output_buffer.append(f"\n📅 Săptămâna {week}:")
+                            print(f"\n📅 Săptămâna {week}:")
                             week_has_slots = True
                             found_any = True
-                        
                         day_name = ["Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă"][day_idx-1]
-                        output_buffer.append(f"  📍 {day_name}:")
+                        print(f"  📍 {day_name}:")
                         for s in slots:
-                            output_buffer.append(f"    🔓 {s['formatted']} -> {s['sala']}")
-                
-                if week_has_slots:
-                    print("\n".join(output_buffer))
-
+                            print(f"    🔓 {s['formatted']} -> {s['sala']}")
+            
             if not found_any:
-                print("📭 Nu s-au găsit sloturi libere care să respecte toate condițiile.")
+                print("📭 Nu s-au găsit sloturi libere.")
 
-        end_time = time.time()
-        print(f"\n⏱️ Test finalizat în {end_time - start_time:.2f} secunde.")
+        print(f"\n⏱️ Finalizat în {time.time() - start_time:.2f} secunde.")
 
     except Exception as e:
-        print(f"🔥 Eroare critică: {e}")
+        print(f"🔥 Eroare: {e}")
         import traceback
         traceback.print_exc()
     finally:
