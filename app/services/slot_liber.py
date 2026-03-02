@@ -87,7 +87,7 @@ def get_data(db: Session, req: SlotLiberRequest):
     # 7. Formatăm rezultatul pentru algoritmul de identificare sloturi libere
     return {"constraints": [format_row(row) for row in all_schedule_data]}
 
-def find_free_slots_with_rooms(db: Session, constraints: List[dict], sali_ids: List[int], duration_minutes: int = 120):
+def find_free_slots_with_rooms(db: Session, constraints: List[dict], sali_ids: List[int], duration_minutes: int = 120, target_day: int = None):
     """
     Identifică intervalele libere comune profesorului și grupelor, 
     apoi verifică care din sălile solicitate sunt disponibile în acele intervale.
@@ -124,7 +124,9 @@ def find_free_slots_with_rooms(db: Session, constraints: List[dict], sali_ids: L
     free_schedule = {w: {d: [] for d in range(1, 7)} for w in range(1, 15)}
 
     for week in range(1, 15):
-        for day in range(1, 7):
+        zile_de_verificat = [target_day] if target_day is not None else range(1, 7)
+        
+        for day in zile_de_verificat:
             # A. Găsim când sunt LIBERI oamenii (Profesor + Grupe)
             blocks_people = sorted([
                 (c["start"], c["end"]) 
@@ -207,7 +209,7 @@ if __name__ == "__main__":
         durata=2,  # 2 ore
         tip_activitate="Curs",
         numar_persoane=0,
-        zi=2,   # Testăm pentru toate zilele săptămânii
+        zi=3,   # Testăm pentru toate zilele săptămânii
         ora_start=9
     )
 
@@ -238,7 +240,8 @@ if __name__ == "__main__":
                 db_session, 
                 constraints, 
                 test_req.sali_ids, 
-                duration_minutes=durata_min
+                duration_minutes=durata_min,
+                target_day=test_req.zi
             )
 
             found_any = False
