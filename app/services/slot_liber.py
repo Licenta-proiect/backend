@@ -8,6 +8,7 @@ import hashlib
 from ortools.sat.python import cp_model
 
 from app.services.future_weeks import get_future_weeks_logic
+from app.utils.date_helper import get_calendar_date
 from .slot_alternativ import format_row, parse_weeks_from_info
 
 def get_profesor_id(db: Session, email: str):
@@ -207,10 +208,10 @@ def find_free_slots_cp_sat(db: Session, constraints: dict, sali_ids: List[int], 
 
     return free_schedule
 
-def group_slots_for_ui(free_slots_raw: dict):
+def group_slots_for_ui(db: Session, free_slots_raw: dict, current_semester: int):
     """
     Transformă output-ul brut al solverului într-o structură optimizată pentru UI.
-    Structura: { week_no: { day_name: [ { sala: name, ore_start: [] } ] } }
+    Include data calendaristică pentru fiecare zi.
     """
     day_map = {1: "Luni", 2: "Marți", 3: "Miercuri", 4: "Joi", 5: "Vineri", 6: "Sâmbătă"}
     grouped = {}
@@ -220,8 +221,11 @@ def group_slots_for_ui(free_slots_raw: dict):
         for day_idx, slots in days.items():
             if not slots:
                 continue
-            
-            day_name = day_map.get(day_idx, f"Ziua {day_idx}")
+
+            # Calculăm data
+            data_calendar = get_calendar_date(db, week, day_idx, current_semester)
+            day_label = f"{day_map.get(day_idx, 'Ziua ' + str(day_idx))} ({data_calendar})"
+
             # Grupăm sloturile după numele sălii în această zi
             rooms_in_day = {}
             for s in slots:
@@ -233,7 +237,7 @@ def group_slots_for_ui(free_slots_raw: dict):
                 rooms_in_day[room_name].append(ora_start)
             
             # Formatăm pentru UI (listă de obiecte pentru a fi ușor de iterat în frontend)
-            week_data[day_name] = [
+            week_data[day_label] = [
                 {"sala": r_name, "ore_posibile": sorted(list(set(starts)))} 
                 for r_name, starts in rooms_in_day.items()
             ]
@@ -299,7 +303,11 @@ if __name__ == "__main__":
                 active_weeks=filtered_active_weeks 
             ) 
             
-            ui_report = group_slots_for_ui(free_slots_report)
+            ui_report = group_slots_for_ui(
+                db=db_session, 
+                free_slots_raw=free_slots_report, 
+                current_semester=current_semester
+            )
 
             # 5. Afișare simulată ca în Interfață (Carduri)
             if not ui_report:
