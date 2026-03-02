@@ -1,8 +1,10 @@
 # app\services\slot_liber.py
+from datetime import datetime
 from sqlalchemy import func, distinct
 from sqlalchemy.orm import Session
 from app.models.models import Orar, Subgrupa, Profesor, Sala
 from app.schemas.user import SlotLiberRequest
+from app.utils.time_helper import get_now
 from typing import List
 import hashlib
 from ortools.sat.python import cp_model
@@ -20,26 +22,30 @@ def get_profesor_id(db: Session, email: str):
     
     return profesor.id
 
-def get_max_week_for_groups(db: Session, id_grupe: List[int]) -> int:
+def get_max_week_for_groups(db: Session, id_grupe: List[int], current_semester: int) -> int:
     """
-    Determină săptămâna maximă (10 sau 14) verificând dacă grupele sunt în an terminal.
-    Un an este terminal dacă studyYear este egal cu maximul studyYear pentru acea specializare.
+    Determină săptămâna maximă (10 sau 14).
+    Anii terminali au:
+    - 14 săptămâni în Semestrul 1
+    - 10 săptămâni în Semestrul 2
     """
-    # 1. Luăm specializările și anii de studiu pentru grupele noastre
+    # Dacă suntem în Semestrul 1, oricum toată lumea are 14 săptămâni
+    if current_semester == 1:
+        return 14
+
     grupe = db.query(Subgrupa).filter(Subgrupa.id.in_(id_grupe)).all()
-    
     if not grupe:
         return 14
 
     is_terminal = False
     for g in grupe:
-        # 2. Căutăm care este anul maxim pentru specializarea acestei grupe
+        # Căutăm care este anul maxim pentru specializarea acestei grupe
         max_year = db.query(func.max(Subgrupa.studyYear)).filter(
             Subgrupa.specializationShortName == g.specializationShortName,
             Subgrupa.faculty_id == g.faculty_id
         ).scalar()
         
-        # 3. Dacă grupa curentă este în anul maxim, e an terminal
+        # Dacă grupa curentă este în anul maxim, e an terminal
         if g.studyYear == max_year:
             is_terminal = True
             break # E suficient ca o grupă să fie terminală pentru a limita căutarea
@@ -69,7 +75,7 @@ def verifica_existenta_materie(db: Session, id_profesor: int, id_grupe: List[int
     # Acest lucru garantează că profesorul predă materia și TOATE grupele o au în program
     return existent_entities_count == len(target_tags)
 
-def get_data(db: Session, req: SlotLiberRequest):
+def get_data(db: Session, req: SlotLiberRequest, current_semester: int):
     '''Extrage datele din orar pentru profesor,subgrupe și săli'''
     # Preia ID Profesor din email
     id_prof = get_profesor_id(db, req.email)
@@ -81,7 +87,7 @@ def get_data(db: Session, req: SlotLiberRequest):
         return {"info": "Materia sau tipul de activitate nu a fost găsit în orarul profesorului sau al grupelor."}
 
     # Determinăm săptămâna maximă pe baza anului de studiu
-    max_week_limit = get_max_week_for_groups(db, req.grupe_ids)
+    max_week_limit = get_max_week_for_groups(db, req.grupe_ids, current_semester)
 
     # Extragem toate datele relevante într-un singur query pentru eficiență
     tags_prof = [f"p{id_prof}"]
@@ -210,11 +216,14 @@ def find_free_slots_cp_sat(db: Session, constraints: dict, sali_ids: List[int], 
 
 def group_slots_for_ui(db: Session, free_slots_raw: dict, current_semester: int):
     """
-    Transformă output-ul brut al solverului într-o structură optimizată pentru UI.
-    Include data calendaristică pentru fiecare zi.
+    Transformă output-ul solverului în structură UI.
+    Filtrează zilele trecute și orele trecute din ziua curentă conform get_now().
     """
     day_map = {1: "Luni", 2: "Marți", 3: "Miercuri", 4: "Joi", 5: "Vineri", 6: "Sâmbătă"}
     grouped = {}
+    
+    now = get_now()
+    today_date = now.date()
 
     for week, days in free_slots_raw.items():
         week_data = {}
@@ -222,25 +231,38 @@ def group_slots_for_ui(db: Session, free_slots_raw: dict, current_semester: int)
             if not slots:
                 continue
 
-            # Calculăm data
-            data_calendar = get_calendar_date(db, week, day_idx, current_semester)
-            day_label = f"{day_map.get(day_idx, 'Ziua ' + str(day_idx))} ({data_calendar})"
+            # 1. Calculăm data calendaristică a slotului
+            data_str = get_calendar_date(db, week, day_idx, current_semester)
+            
+            try:
+                slot_date = datetime.strptime(data_str, "%d.%m.%Y").date()
+                
+                #  Dacă ziua a trecut deja, sărim peste toată ziua
+                if slot_date <= today_date:
+                    continue
+                    
+            except (ValueError, TypeError):
+                continue
 
-            # Grupăm sloturile după numele sălii în această zi
+            # 2. Grupăm sloturile și filtrăm orele dacă e ziua curentă
             rooms_in_day = {}
             for s in slots:
                 room_name = s['sala']
                 if room_name not in rooms_in_day:
                     rooms_in_day[room_name] = []
-                # Adăugăm doar ora de start (ex: "14:00")
+                
                 ora_start = s['formatted'].split(" - ")[0]
                 rooms_in_day[room_name].append(ora_start)
             
-            # Formatăm pentru UI (listă de obiecte pentru a fi ușor de iterat în frontend)
-            week_data[day_label] = [
+            # Verificăm dacă mai avem camere cu ore valide după filtrare
+            day_ui_list = [
                 {"sala": r_name, "ore_posibile": sorted(list(set(starts)))} 
-                for r_name, starts in rooms_in_day.items()
+                for r_name, starts in rooms_in_day.items() if starts
             ]
+
+            if day_ui_list:
+                day_label = f"{day_map.get(day_idx, 'Ziua ' + str(day_idx))} ({data_str})"
+                week_data[day_label] = day_ui_list
         
         if week_data:
             grouped[week] = week_data
@@ -278,8 +300,7 @@ if __name__ == "__main__":
         print(f"🗓️ Săptămâni de curs rămase: {active_weeks}")
 
         # 2. Extragere date structurate
-        # 2. Extragere date structurate
-        data_result = get_data(db_session, test_req)
+        data_result = get_data(db_session, test_req, current_semester)
         
         if "error" in data_result or "info" in data_result:
             print(f"❌ Mesaj: {data_result.get('error') or data_result.get('info')}")
