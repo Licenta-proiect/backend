@@ -19,6 +19,32 @@ def get_profesor_id(db: Session, email: str):
     
     return profesor.id
 
+def get_max_week_for_groups(db: Session, id_grupe: List[int]) -> int:
+    """
+    Determină săptămâna maximă (10 sau 14) verificând dacă grupele sunt în an terminal.
+    Un an este terminal dacă studyYear este egal cu maximul studyYear pentru acea specializare.
+    """
+    # 1. Luăm specializările și anii de studiu pentru grupele noastre
+    grupe = db.query(Subgrupa).filter(Subgrupa.id.in_(id_grupe)).all()
+    
+    if not grupe:
+        return 14
+
+    is_terminal = False
+    for g in grupe:
+        # 2. Căutăm care este anul maxim pentru specializarea acestei grupe
+        max_year = db.query(func.max(Subgrupa.studyYear)).filter(
+            Subgrupa.specializationShortName == g.specializationShortName,
+            Subgrupa.faculty_id == g.faculty_id
+        ).scalar()
+        
+        # 3. Dacă grupa curentă este în anul maxim, e an terminal
+        if g.studyYear == max_year:
+            is_terminal = True
+            break # E suficient ca o grupă să fie terminală pentru a limita căutarea
+            
+    return 10 if is_terminal else 14
+
 def verifica_existenta_materie(db: Session, id_profesor: int, id_grupe: List[int], materie: str, tip_materie: str) -> bool:
     """
     Verifică dacă materia și tipul de activitate există în orarul profesorului 
@@ -53,12 +79,15 @@ def get_data(db: Session, req: SlotLiberRequest):
     if not verifica_existenta_materie(db, id_prof, req.grupe_ids, req.materie, req.tip_activitate):
         return {"info": "Materia sau tipul de activitate nu a fost găsit în orarul profesorului sau al grupelor."}
 
+    # Determinăm săptămâna maximă pe baza anului de studiu
+    max_week_limit = get_max_week_for_groups(db, req.grupe_ids)
+
     # Extragem toate datele relevante într-un singur query pentru eficiență
     tags_prof = [f"p{id_prof}"]
     tags_grupe = [f"g{gid}" for gid in req.grupe_ids]
     tags_sali = [f"s{sid}" for sid in req.sali_ids]
-
     all_tags = tags_prof + tags_grupe + tags_sali
+
     # Extrage toate datele din orar care au idURL în lista construită
     query = db.query(Orar).filter(Orar.idURL.in_(all_tags))
 
@@ -88,14 +117,12 @@ def get_data(db: Session, req: SlotLiberRequest):
         tags_sali_invalide = [f"s{sid}" for sid in req.sali_ids if sid not in valid_sala_ids]
         all_schedule_data = [d for d in all_schedule_data if d.idURL not in tags_sali_invalide]
 
-    # Structurăm datele în cei 3 vectori ceruți
-    constraints = {
+    return {
         "profesor": [format_row(r) for r in all_schedule_data if r.idURL in tags_prof],
         "subgrupe": [format_row(r) for r in all_schedule_data if r.idURL in tags_grupe],
-        "sali": [format_row(r) for r in all_schedule_data if r.idURL in tags_sali]
+        "sali": [format_row(r) for r in all_schedule_data if r.idURL in tags_sali],
+        "max_week_limit": max_week_limit
     }
-
-    return constraints
 
 def find_free_slots_cp_sat(db: Session, constraints: dict, sali_ids: List[int], duration_minutes: int, target_day: int, active_weeks: List[int]):
     START_DAY, END_DAY = 8 * 60, 21 * 60
@@ -230,7 +257,7 @@ if __name__ == "__main__":
         durata=2,  # 2 ore
         tip_activitate="Curs",
         numar_persoane=0,
-        zi=1,   # Testăm pentru toate zilele săptămânii
+        zi=2,   # Testăm pentru toate zilele săptămânii
         ora_start=8
     )
 
@@ -247,12 +274,18 @@ if __name__ == "__main__":
         print(f"🗓️ Săptămâni de curs rămase: {active_weeks}")
 
         # 2. Extragere date structurate
+        # 2. Extragere date structurate
         data_result = get_data(db_session, test_req)
         
         if "error" in data_result or "info" in data_result:
             print(f"❌ Mesaj: {data_result.get('error') or data_result.get('info')}")
         else:
+            # Calculăm limita DOAR dacă datele au fost extrase cu succes
+            max_w = data_result.get("max_week_limit", 14)
+            filtered_active_weeks = [w for w in active_weeks if w <= max_w]
+            
             print(f"✅ Date extrase ({len(data_result['profesor'])}P, {len(data_result['subgrupe'])}G, {len(data_result['sali'])}S)")
+            print(f"📅 Limita academică detectată: s{max_w} | Săptămâni de calcul: {filtered_active_weeks}")
 
             # 3. Execuție Solver
             durata_min = test_req.durata * 60 if test_req.durata else 120
@@ -263,9 +296,9 @@ if __name__ == "__main__":
                 sali_ids=test_req.sali_ids, 
                 duration_minutes=durata_min,
                 target_day=test_req.zi,
-                active_weeks=active_weeks # Pasăm săptămânile determinate din calendar
-            )
-
+                active_weeks=filtered_active_weeks 
+            ) 
+            
             ui_report = group_slots_for_ui(free_slots_report)
 
             # 5. Afișare simulată ca în Interfață (Carduri)
