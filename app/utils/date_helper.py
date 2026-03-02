@@ -15,44 +15,42 @@ def get_calendar_date(db: Session, week: int, day_idx: int, semester: int) -> st
     ).first()
 
     if not cal_entry or not cal_entry.perioada:
-        return "Data necunoscută"
+        return "Fără calendar"
+
+    target_date = None
 
     try:
-        # Splităm segmentele (în caz că există ';' pentru fracționare)
         segments = cal_entry.perioada.split(';')
         
-        # Segment 1
-        first_part = segments[0].split('-')
-        start_1 = datetime.strptime(first_part[0].strip(), "%Y.%m.%d")
-        end_1 = datetime.strptime(first_part[1].strip(), "%Y.%m.%d")
-        
-        # VERIFICARE: În ce zi a săptămânii pică start_1?
-        # Dacă start_1.weekday() este 0, e Luni. Dacă e 1, e Marți, etc.
-        db_start_weekday = start_1.weekday() + 1 # Convertim la formatul tău 1-7
-        
-        # Calculăm distanța reală față de începutul segmentului
-        # Dacă day_idx e Joi(4) și segmentul începe Luni(1), offset-ul e 3 zile.
-        # Dacă segmentul începe direct de Marți(2), offset-ul e doar 2 zile.
-        offset = day_idx - db_start_weekday
-        
-        # Verificăm dacă day_idx se află în primul segment
-        if offset >= 0 and (start_1 + timedelta(days=offset)) <= end_1:
-            target_date = start_1 + timedelta(days=offset)
-        
-        elif len(segments) > 1:
-            # Trecem la segmentul 2 (ex: după vacanța de Crăciun)
-            second_part = segments[1].split('-')
-            start_2 = datetime.strptime(second_part[0].strip(), "%Y.%m.%d")
+        # Încercăm să găsim data în segmentele disponibile
+        for seg in segments:
+            parts = seg.split('-')
+            if len(parts) != 2: continue
             
-            # Aflăm în ce zi a săptămânii începe al doilea segment
-            db_start_2_weekday = start_2.weekday() + 1
-            offset_2 = day_idx - db_start_2_weekday
-            target_date = start_2 + timedelta(days=offset_2)
-        else:
-            # Fallback dacă ceva nu se aliniază
-            target_date = start_1 + timedelta(days=(day_idx - 1))
+            start_dt = datetime.strptime(parts[0].strip(), "%Y.%m.%d")
+            end_dt = datetime.strptime(parts[1].strip(), "%Y.%m.%d")
+            
+            # Aflăm în ce zi a săptămânii începe segmentul curent (0=Luni, 6=Dum)
+            # Îl convertim la 1=Luni, ..., 7=Dum pentru a se potrivi cu day_idx
+            seg_start_weekday = start_dt.weekday() + 1
+            
+            # Calculăm distanța (offset-ul) necesar pentru a ajunge la ziua dorită
+            offset = day_idx - seg_start_weekday
+            potential_date = start_dt + timedelta(days=offset)
+            
+            # Verificăm dacă data rezultată se află în interiorul acestui segment
+            if start_dt <= potential_date <= end_dt:
+                target_date = potential_date
+                break # Am găsit segmentul corect
 
-        return target_date.strftime("%d.%m.%Y")
+        # Dacă am găsit o dată, verificăm dacă ziua ei de săptămână coincide cu day_idx
+        if target_date:
+            actual_weekday = target_date.weekday() + 1
+            if actual_weekday == day_idx:
+                return target_date.strftime("%d.%m.%Y")
+        
+        return "Zi nelucrătoare/Vacanță"
 
     except Exception as e:
+        print(f"Eroare date_helper: {e}")
         return "Eroare format"
