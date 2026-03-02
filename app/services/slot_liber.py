@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.models.models import Orar, Subgrupa, Profesor, Sala
 from app.schemas.user import SlotLiberRequest
 from typing import List
+import hashlib
 from ortools.sat.python import cp_model
 
 from app.services.future_weeks import get_future_weeks_logic
@@ -97,73 +98,86 @@ def get_data(db: Session, req: SlotLiberRequest):
     return constraints
 
 def find_free_slots_cp_sat(db: Session, constraints: dict, sali_ids: List[int], duration_minutes: int, target_day: int, active_weeks: List[int]):
-    """Identifică intervalele libere folosind CP-SAT, doar pentru săptămânile active."""
-    START_DAY, END_DAY = 8 * 60, 21 * 60  # 08:00 - 21:00
-    free_schedule = {w: {d: [] for d in range(1, 7)} for w in range(1, 15)}
-    
+    START_DAY, END_DAY = 8 * 60, 21 * 60
+    free_schedule = {w: {d: [] for d in range(1, 7)} for w in active_weeks}
     nume_sali = {s.id: s.name for s in db.query(Sala).filter(Sala.id.in_(sali_ids)).all()}
+    
+    # Cache pentru a nu rula solverul pentru configuratii identice de blocaje
+    # { "semnatura_blocaje": { day: [slots] } }
+    solver_cache = {}
 
-    # Iterăm doar prin săptămânile care nu s-au încheiat încă
     for week in active_weeks:
         zile = [target_day] if target_day is not None else range(1, 7)
+        
         for day in zile:
+            # 1. Cream o "semnatura" a blocajelor pentru aceasta saptamana si zi
+            # Luam toate ID-urile si orele blocajelor care pica in aceasta saptamana
+            current_blocks_raw = []
+            for cat in ['profesor', 'subgrupe', 'sali']:
+                for c in constraints[cat]:
+                    if c['weekDay'] == day:
+                        weeks_allowed = parse_weeks_from_info(c['otherInfo'], c['parity'])
+                        if week in weeks_allowed:
+                            # Adaugam informatiile relevante care definesc unicitatea blocajului
+                            current_blocks_raw.append(f"{c['idURL']}_{c['startHour']}_{c['duration']}")
+            
+            # Sortam pentru a ne asigura ca aceleasi blocaje produc aceeasi semnatura
+            current_blocks_raw.sort()
+            # Adaugam si ID-urile salilor cautate in semnatura (pentru ca solverul itereaza si prin ele)
+            signature = hashlib.md5(f"{day}_{''.join(current_blocks_raw)}_{sali_ids}".encode()).hexdigest()
+
+            # 2. Verificam daca am calculat deja aceasta configuratie
+            if signature in solver_cache:
+                free_schedule[week][day] = solver_cache[signature]
+                continue
+
+            # 3. Daca nu e in cache, rulam solverul
+            day_results = []
             for sid in sali_ids:
                 model = cp_model.CpModel()
-                
-                # 1. Definim variabila intervalului căutat (Slotul Liber)
                 start_var = model.NewIntVar(START_DAY, END_DAY - duration_minutes, 'start')
                 end_var = model.NewIntVar(START_DAY + duration_minutes, END_DAY, 'end')
-                # Constrângere durată: end - start = durata
                 model.Add(end_var == start_var + duration_minutes)
-                
-                # 2. Colectăm toate blocajele (Profesor + Toate Grupele + Sala curentă)
+
+                # Colectam blocajele specifice pentru acest model
                 block_list = []
-                # Constrângeri profesor
-                block_list += [c for c in constraints['profesor'] if c['weekDay'] == day and week in parse_weeks_from_info(c['otherInfo'], c['parity'])]
-                # Constrângeri grupe
-                block_list += [c for c in constraints['subgrupe'] if c['weekDay'] == day and week in parse_weeks_from_info(c['otherInfo'], c['parity'])]
-                # Constrângeri sala specifică
-                block_list += [c for c in constraints['sali'] if c['idURL'] == f"s{sid}" and c['weekDay'] == day and week in parse_weeks_from_info(c['otherInfo'], c['parity'])]
+                for cat in ['profesor', 'subgrupe', 'sali']:
+                    for c in constraints[cat]:
+                        if c['weekDay'] == day:
+                            # Daca e sala, verificam sa fie sala curenta
+                            if cat == 'sali' and c['idURL'] != f"s{sid}":
+                                continue
+                            weeks_allowed = parse_weeks_from_info(c['otherInfo'], c['parity'])
+                            if week in weeks_allowed:
+                                block_list.append(c)
 
-                # 3. Adăugăm constrângerile de Non-Overlap în model
+                # Non-Overlap constraints
                 for block in block_list:
-                    b_start = int(block['startHour'])
-                    b_end = b_start + int(block['duration'])
-                    
-                    # Logica CP-SAT: Slotul (start_var, end_var) NU trebuie să se suprapună cu (b_start, b_end)
-                    # Adică: slot_end <= b_start SAU slot_start >= b_end
-                    overlap_condition_1 = model.NewBoolVar('overlap_1')
-                    model.Add(end_var <= b_start).OnlyEnforceIf(overlap_condition_1)
-                    
-                    overlap_condition_2 = model.NewBoolVar('overlap_2')
-                    model.Add(start_var >= b_end).OnlyEnforceIf(overlap_condition_2)
-                    
-                    model.AddBoolOr([overlap_condition_1, overlap_condition_2])
+                    b_start, b_end = int(block['startHour']), int(block['startHour']) + int(block['duration'])
+                    o1, o2 = model.NewBoolVar('o1'), model.NewBoolVar('o2')
+                    model.Add(end_var <= b_start).OnlyEnforceIf(o1)
+                    model.Add(start_var >= b_end).OnlyEnforceIf(o2)
+                    model.AddBoolOr([o1, o2])
 
-                # 4. Rezolvăm și căutăm toate soluțiile posibile pentru acest interval
                 solver = cp_model.CpSolver()
-                
-                # Căutăm soluții în trepte de 30 minute pentru a nu genera mii de rezultate identice
                 current_search_start = START_DAY
                 while current_search_start <= (END_DAY - duration_minutes):
                     model.Add(start_var >= current_search_start)
                     status = solver.Solve(model)
-                    
-                    if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-                        found_start = solver.Value(start_var)
-                        found_end = solver.Value(end_var)
-                        
-                        free_schedule[week][day].append({
-                            "start": found_start,
-                            "end": found_end,
-                            "formatted": f"{found_start//60:02d}:{found_start%60:02d} - {found_end//60:02d}:{found_end%60:02d}",
+                    if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+                        f_start, f_end = solver.Value(start_var), solver.Value(end_var)
+                        day_results.append({
+                            "start": f_start, "end": f_end,
+                            "formatted": f"{f_start//60:02d}:{f_start%60:02d} - {f_end//60:02d}:{f_end%60:02d}",
                             "sala": nume_sali.get(sid, f"Sala {sid}")
                         })
-                        # Mergem mai departe cu căutarea (pas de 60 min)
-                        current_search_start = found_start + 60
-                    else:
-                        break
-                        
+                        current_search_start = f_start + 60
+                    else: break
+
+            # Salveaza in cache si in program
+            solver_cache[signature] = day_results
+            free_schedule[week][day] = day_results
+
     return free_schedule
 
 def group_slots_for_ui(free_slots_raw: dict):
@@ -216,7 +230,7 @@ if __name__ == "__main__":
         durata=2,  # 2 ore
         tip_activitate="Curs",
         numar_persoane=0,
-        zi=None,   # Testăm pentru toate zilele săptămânii
+        zi=1,   # Testăm pentru toate zilele săptămânii
         ora_start=8
     )
 
