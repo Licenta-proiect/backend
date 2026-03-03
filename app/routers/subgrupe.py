@@ -170,7 +170,7 @@ async def cauta_sloturi_alternative(
                 "profesor": nume_profesor,
                 "sala": nume_sala,
                 "saptamani_lista": actual_future_weeks,
-                "saptamani_grupate": group_consecutive_weeks(alt["weeks"])
+                "saptamani_grupate": group_consecutive_weeks(actual_future_weeks)
             })
         
         info_msg = None
