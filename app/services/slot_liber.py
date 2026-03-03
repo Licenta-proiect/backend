@@ -56,7 +56,7 @@ def verifica_existenta_materie(db: Session, id_profesor: int, id_grupe: List[int
     """
     Verifică dacă materia și tipul de activitate există în orarul profesorului 
     și al tuturor grupelor selectate.
-    Nu e neapărat ca profesorul să predea la grupa respectivă, el poate selecta o grupă pentru a înlocui un alt profesor.
+    Profesorul trebuie să predea la grupa respectivă.
     
     Returnează True doar dacă fiecare entitate (profesor + fiecare grupă) 
     are cel puțin o înregistrare pentru materia respectivă.
@@ -67,6 +67,7 @@ def verifica_existenta_materie(db: Session, id_profesor: int, id_grupe: List[int
     # Numărăm entitățile distincte din lista noastră care apar în orar cu această materie
     existent_entities_count = db.query(func.count(distinct(Orar.idURL))).filter(
         Orar.idURL.in_(target_tags),
+        Orar.teacherID == id_profesor,
         func.lower(Orar.topicLongName) == func.lower(materie),
         func.lower(Orar.typeLongName) == func.lower(tip_materie)
     ).scalar()
@@ -278,7 +279,7 @@ if __name__ == "__main__":
     test_req = SlotLiberRequest(
         email="stoicaalexandra180@gmail.com",
         materie="Criptografie şi securitate informaţională",
-        grupe_ids=[49, 50, 51],
+        grupe_ids=[43, 44, 46, 2431, 1030],
         sali_ids=[66, 24, 30],
         durata=2,  # 2 ore
         tip_activitate="Curs",
