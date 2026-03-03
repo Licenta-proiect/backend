@@ -52,6 +52,25 @@ def get_max_week_for_groups(db: Session, id_grupe: List[int], current_semester: 
             
     return 10 if is_terminal else 14
 
+def valideaza_configuratie_grupe(id_grupe: List[int], tip_activitate: str):
+    """
+    Validează dacă numărul de grupe selectate este permis pentru tipul de activitate.
+    """
+    tip = tip_activitate.lower()
+    numar_grupe = len(id_grupe)
+
+    if tip in ["laborator", "proiect"] and numar_grupe > 1:
+        return {
+            "info": f"Pentru activități de tip {tip_activitate}, se poate selecta o singură grupă."
+        }
+    
+    if tip == "seminar" and numar_grupe > 2:
+        return {
+            "info": "Pentru activități de tip seminar, se pot selecta maxim 2 grupe."
+        }
+    
+    return None
+
 def verifica_existenta_materie(db: Session, id_profesor: int, id_grupe: List[int], materie: str, tip_materie: str) -> bool:
     """
     Verifică dacă materia și tipul de activitate există în orarul profesorului 
@@ -78,6 +97,10 @@ def verifica_existenta_materie(db: Session, id_profesor: int, id_grupe: List[int
 
 def get_data(db: Session, req: SlotLiberRequest, current_semester: int):
     '''Extrage datele din orar pentru profesor,subgrupe și săli'''
+    validare = valideaza_configuratie_grupe(req.grupe_ids, req.tip_activitate)
+    if validare:
+        return validare
+    
     # Preia ID Profesor din email
     id_prof = get_profesor_id(db, req.email)
     if not id_prof:
@@ -279,7 +302,7 @@ if __name__ == "__main__":
     test_req = SlotLiberRequest(
         email="stoicaalexandra180@gmail.com",
         materie="Criptografie şi securitate informaţională",
-        grupe_ids=[43, 44, 46, 2431, 1030],
+        grupe_ids=[49, 50, 51],
         sali_ids=[66, 24, 30],
         durata=2,  # 2 ore
         tip_activitate="Curs",
