@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.models.models import Facultate, Profesor, Sala, Subgrupa, User, UserRole
+from app.utils.config import settings
 
 # URL-urile oficiale USV furnizate de tine
 URLS = {
@@ -167,24 +168,22 @@ async def populate():
             ))
 
        # --- 5. ADMIN (Gestiune inteligentă administrator) ---
-        print("👤 Verificăm contul de administrator...")
-        admin_email = "stoicamaria180@gmail.com"
+        print(f"👤 Verificăm contul de administrator: {settings.ADMIN_EMAIL}")
 
-        # Căutăm dacă admin-ul există deja după email
-        existing_admin = db.query(User).filter(User.email == admin_email).first()
+        existing_admin = db.query(User).filter(User.email == settings.ADMIN_EMAIL).first()
 
         if existing_admin:
             # Dacă există, îi actualizăm doar datele (opțional)
-            existing_admin.lastName = "Stoica"
-            existing_admin.firstName = "Maria Alexandra"
+            existing_admin.lastName = settings.ADMIN_LAST_NAME
+            existing_admin.firstName = settings.ADMIN_FIRST_NAME
             existing_admin.role = UserRole.ADMIN.value
             print("✅ Cont administrator actualizat.")
         else:
             # Dacă nu există, îl creăm de la zero
             admin_user = User(
-                lastName="Stoica", 
-                firstName="Maria Alexandra", 
-                email=admin_email,
+                lastName=settings.ADMIN_LAST_NAME, 
+                firstName=settings.ADMIN_FIRST_NAME, 
+                email=settings.ADMIN_EMAIL,
                 role=UserRole.ADMIN.value 
             )
             db.add(admin_user)
