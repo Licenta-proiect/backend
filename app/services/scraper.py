@@ -133,6 +133,16 @@ async def populate():
 
         # --- 4. SUBGRUPE cu protecție la Foreign Key ---
         print("📥 Descărcăm subgrupe...")
+
+        # Ștergem toate înregistrările existente înainte de populare
+        try:
+            db.query(Subgrupa).delete()
+            db.commit()
+            print("🗑️ Datele vechi din 'subgrupe' au fost șterse.")
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Atenție: Nu s-a putut face wipe la subgrupe: {e}")
+
         subgrupe_json = await fetch_data(URLS["subgrupe"])
         
         # Luăm toate ID-urile de facultăți valide care există deja în DB
@@ -144,7 +154,7 @@ async def populate():
             if sg["id"] == "0" or sg["facultyId"] == "0" or sg["facultyId"] == 0: 
                 continue
                 
-            db.merge(Subgrupa(
+            db.add(Subgrupa(
                 id=int(sg["id"]),
                 type=clean_val(sg["type"]),
                 faculty_id=int(sg["facultyId"]),
