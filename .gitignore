@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 .venv/
 alembic/versions/*.py
+backups/
+*.sql

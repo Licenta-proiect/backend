@@ -13,6 +13,7 @@ from app.services.scraper_calendar import run as populate_calendar
 from app.services.scraper_orar import populate as populate_orar
 from app.schemas.user import UserCreate, UserResponse, UserUpdate, SyncHistoryResponse
 from app.services.sync_logger import run_sync_with_logging
+from app.services.backup import execute_db_backup
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -322,6 +323,7 @@ async def reject_professor_request(
 @router.post("/sync/base")
 async def sync_base_data(bg: BackgroundTasks, user: User = Depends(get_current_user)):
     check_admin(user)
+
     # Rulăm wrapper-ul care se ocupă de logare și execuția populate_base
     bg.add_task(run_sync_with_logging, populate_base, "Base")
     return {"message": "Sincronizare date de bază pornită."}
@@ -329,12 +331,24 @@ async def sync_base_data(bg: BackgroundTasks, user: User = Depends(get_current_u
 @router.post("/sync/calendar")
 async def sync_calendar(bg: BackgroundTasks, user: User = Depends(get_current_user)):
     check_admin(user)
+
+    print("📦 Inițiem backup preventiv...")
+    backup_file = execute_db_backup()
+    if not backup_file:
+         raise HTTPException(status_code=500, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
+
     bg.add_task(run_sync_with_logging, populate_calendar, "Calendar")
     return {"message": "Sincronizare calendar pornită."}
 
 @router.post("/sync/orar")
 async def sync_orar(bg: BackgroundTasks, user: User = Depends(get_current_user)):
     check_admin(user)
+
+    print("📦 Inițiem backup preventiv...")
+    backup_file = execute_db_backup()
+    if not backup_file:
+         raise HTTPException(status_code=500, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
+
     bg.add_task(run_sync_with_logging, populate_orar, "Orar")
     return {"message": "Sincronizare orar pornită."}
 
@@ -345,6 +359,12 @@ async def sync_full_db_orar(bg: BackgroundTasks, user: User = Depends(get_curren
     urmate imediat de Orar.
     """
     check_admin(user)
+
+    print("📦 Inițiem backup preventiv...")
+    backup_file = execute_db_backup()
+    if not backup_file:
+         raise HTTPException(status_code=500, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
+
     # Apelăm wrapper-ul cu funcția care le execută pe ambele
     bg.add_task(run_sync_with_logging, sync_baza_si_orar_logic, "Baza + Orar")
     return {"message": "Sincronizarea combinată (Bază + Orar) a pornit în fundal."}

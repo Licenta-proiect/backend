@@ -8,5 +8,6 @@ class Settings:
     ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "default@example.com")
     ADMIN_FIRST_NAME: str = os.getenv("ADMIN_FIRST_NAME", "Admin")
     ADMIN_LAST_NAME: str = os.getenv("ADMIN_LAST_NAME", "System")
+    BACKUP_PATH: str = os.getenv("BACKUP_PATH", "./backups")
 
 settings = Settings()
