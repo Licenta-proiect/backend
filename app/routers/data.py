@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.models import Subgrupa, Profesor, Sala, Orar
+from app.services.future_weeks import get_future_weeks_logic
 
 router = APIRouter(prefix="/data", tags=["Data"])
 
@@ -77,3 +78,16 @@ async def get_tipuri_activitate(db: Session = Depends(get_db)):
     tipuri = sorted([t[0] for t in query if t[0]])
     
     return tipuri
+
+@router.get("/weeks")
+async def get_future_weeks(db: Session = Depends(get_db)):
+    """
+    Returnează semestrul curent, săptămânile de curs rămase și statusul actual.
+    """
+    current_semester, active_weeks, current_status, last_lecture_date = get_future_weeks_logic(db)
+    
+    return {
+        "current_semester": current_semester,
+        "active_weeks": active_weeks,
+        "current_status": current_status
+    }
