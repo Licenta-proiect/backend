@@ -3,7 +3,7 @@ import random
 import httpx
 import asyncio
 from app.services.scraper import clean_val
-from sqlalchemy import or_, select, distinct
+from sqlalchemy import or_, select, distinct, text
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.models.models import Orar, Profesor, Sala, Subgrupa, Facultate
@@ -108,7 +108,15 @@ async def populate():
     Extragerea ID-urilor unice de săli din orarul deja descărcat (grupe + profesori) și descărcarea orarului lor.
     """
     db: Session = SessionLocal()
-    
+
+    try:
+        db.execute(text("DELETE FROM orar"))
+        db.commit()
+        print("🗑️ Datele vechi din 'orar' au fost șterse.")
+    except Exception as e:
+        db.rollback()
+        print(f"⚠️ Atenție: Nu s-a putut face wipe la orar: {e}")
+
     fac_fiesc = db.query(Facultate).filter(Facultate.shortName == "FIESC").first()
     if not fac_fiesc:
         print("❌ Eroare: Nu am găsit facultatea FIESC în DB!")

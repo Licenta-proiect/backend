@@ -136,7 +136,7 @@ async def populate():
 
         # Ștergem toate înregistrările existente înainte de populare
         try:
-            db.query(Subgrupa).delete()
+            db.execute(text("DELETE FROM subgrupe"))
             db.commit()
             print("🗑️ Datele vechi din 'subgrupe' au fost șterse.")
         except Exception as e:

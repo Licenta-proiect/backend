@@ -1,7 +1,7 @@
 # app\models\models.py
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Date, Table, event
 from sqlalchemy.orm import relationship
-from app.db.session import Base
+from app.db.session import Base, SessionLocal
 from datetime import datetime, timezone
 import enum
 
@@ -184,7 +184,24 @@ def sync_professor_to_user(target, value, oldvalue, initiator):
     if value == oldvalue or value is None:
         return
     
-    # Dacă profesorul are un cont, actualizăm email-ul de login
+    # Extragem sesiunea activă a obiectului
+    from sqlalchemy.orm import object_session
+    session = object_session(target)
+    
     if target.user_account:
-        if target.user_account.email != value:
+        if session:
+            # Verificăm dacă noul email este deja ocupat de ALT utilizator
+            # pentru a evita crash-ul bazei de date (Unique Constraint)
+            existing_user = session.query(User).filter(
+                User.email == value, 
+                User.id != target.user_account.id
+            ).first()
+            
+            if not existing_user:
+                target.user_account.email = value
+            else:
+                print(f"⚠️ Conflict: Email-ul {value} este deja folosit. Sincronizarea contului a fost sărită.")
+        else:
+            # Dacă nu avem sesiune (obiectul e nou), doar setăm valoarea
+            # SQLAlchemy va gestiona restul la flush
             target.user_account.email = value
