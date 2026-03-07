@@ -9,6 +9,13 @@ def execute_db_backup():
     db_uri = settings.DATABASE_URL
     backup_dir = settings.BACKUP_PATH
     
+    # Calea către executabilul pg_dump
+    pg_dump_path = r"C:\Program Files\PostgreSQL\18\bin\pg_dump.exe"
+
+    if not os.path.exists(pg_dump_path):
+        print(f"❌ pg_dump nu a fost găsit! Verifică calea: {pg_dump_path}")
+        return None
+
     # Creăm folderul dacă nu există
     if not os.path.exists(backup_dir):
         os.makedirs(backup_dir)
@@ -22,13 +29,12 @@ def execute_db_backup():
         # -F c (format custom, comprimat)
         # -f (output file)
 
-        process = subprocess.run(
-            ["pg_dump", db_uri, "-F", "c", "-f", filename],
+        subprocess.run(
+            [pg_dump_path, db_uri, "-F", "c", "-f", filename],
             check=True,
             capture_output=True,
             text=True
         )
-
         print(f"✅ Backup creat cu succes: {filename}")
         return filename
     except subprocess.CalledProcessError as e:
