@@ -84,7 +84,7 @@ class SlotLiberRequest(BaseModel):
     tip_activitate: str
     numar_persoane: Optional[int] = None
     zi: Optional[int] = None
-    ora_start: Optional[int] = None
+    saptamani: List[int]
 
     class Config:
         populate_by_name = True
