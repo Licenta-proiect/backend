@@ -179,6 +179,58 @@ def get_teacher_reservations(db: Session, email: str):
     # Sortăm să vedem cele mai recente/viitoare primele
     return sorted(result, key=lambda x: x['data'], reverse=True)
 
+def get_all_reservations_admin(db: Session):
+    """
+    Returnează toate rezervările din sistem pentru panoul de admin.
+    Include numele profesorului și logica de status dinamic.
+    """
+    rezervari = db.query(Rezervare).all()
+    
+    now = get_now()
+    today_date = now.date()
+    current_time_minutes = now.hour * 60 + now.minute
+
+    result = []
+    for r in rezervari:
+        status_final = r.status 
+
+        # Logica status dinamic
+        if r.status.lower() == "rezervat":
+            if r.data_calendaristica < today_date:
+                status_final = "efectuată"
+            elif r.data_calendaristica == today_date:
+                ora_final = r.oraInceput + r.durata
+                if current_time_minutes > ora_final:
+                    status_final = "efectuată"
+
+        # Formatare nume grupe
+        nume_grupe = [f"{g.specializationShortName} {g.groupName}{g.subgroupIndex}" for g in r.grupe]
+
+        nume_profesor = "N/A"
+        email_profesor = "N/A"
+        
+        if r.profesor_titular:
+            nume_profesor = f"{r.profesor_titular.lastName} {r.profesor_titular.firstName}"
+            email_profesor = r.profesor_titular.emailAddress
+            
+        result.append({
+            "id": r.id,
+            "profesor": nume_profesor,
+            "email_profesor": email_profesor,
+            "materie": r.materie,
+            "tip": r.tip,
+            "sala": r.sala.name if r.sala else "N/A",
+            "grupe": nume_grupe,
+            "data": r.data_calendaristica,
+            "ora_start": r.oraInceput // 60,
+            "durata": r.durata // 60,
+            "status": status_final,
+            "motiv_anulare": r.motiv_anulare if r.status == "anulat" else None
+        })
+    
+    # Sortăm descrescător după dată (cele mai noi/viitoare primele)
+    return sorted(result, key=lambda x: x['data'], reverse=True)
+
 if __name__ == "__main__":
     from app.db.session import SessionLocal
     from app.schemas.user import RezervareSlotRequest

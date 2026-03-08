@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.schemas.sync import SyncSettingsUpdate
 from app.services.auth import get_current_user
 from app.models.models import User, UserRole, Profesor, IstoricSincronizare, CerereEmailProfesor, SistemStatus
+from app.services.rezervare import get_all_reservations_admin
 from app.services.scraper import populate as populate_base
 from app.services.scraper_calendar import run as populate_calendar
 from app.services.scraper_orar import populate as populate_orar
@@ -416,3 +417,12 @@ async def update_sync_settings(
     
     db.commit()
     return {"message": "Setări de sincronizare actualizate cu succes."}
+
+# --- RUTE REZERVARI ---
+
+@router.get("/rezervari")
+def get_all_rezervari(db: Session = Depends(get_db)):
+    """
+    Ruta pentru admin care returnează istoricul global al tuturor rezervărilor.
+    """
+    return get_all_reservations_admin(db)
