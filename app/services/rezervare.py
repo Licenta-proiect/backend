@@ -76,3 +76,74 @@ def create_slot_reservation(db: Session, req: RezervareSlotRequest):
     except Exception as e:
         db.rollback()
         return {"error": f"Eroare la salvare: {str(e)}"}
+    
+if __name__ == "__main__":
+    from app.db.session import SessionLocal
+    from app.schemas.user import RezervareSlotRequest
+    from datetime import date
+
+    # 1. Inițializăm sesiunea
+    db = SessionLocal()
+
+    try:
+        print(f"--- 🧪 Pornire Teste Logica Rezervari ---")
+
+        # DATE DE TEST (Ajustate conform output-ului tău de solver sau datelor dorite)
+        test_email = "stoicaalexandra180@gmail.com"
+        
+        # Simulăm un request de rezervare pentru Sala C203 (ID 66) 
+        # Marți (Ziua 2), Săptămâna 9, Ora 16:00
+        rezervare_data = RezervareSlotRequest(
+            email=test_email,
+            salaId=66,
+            grupeIds=[49, 50, 51],
+            materie="Criptografie şi securitate informaţională",
+            tipActivitate="Curs",
+            zi=2,
+            saptamana=9,
+            oraStart="16:00",
+            durata=2,
+            data=date(2026, 4, 28), # Data din output-ul tău de solver
+            numarPersoane=50
+        )
+
+        # TEST 1: Creare Rezervare Nouă
+        print(f"\n[Test 1] Încercăm crearea unei rezervări valide...")
+        rezultat1 = create_slot_reservation(db, rezervare_data)
+        
+        if "success" in rezultat1:
+            print(f"✅ Succes: {rezultat1['success']}")
+        else:
+            print(f"❌ Eroare: {rezultat1['error']}")
+
+        # TEST 2: Încercare de Duplicare (Conflict de Sală/Profesor)
+        print(f"\n[Test 2] Încercăm crearea aceleiași rezervări (trebuie să dea CONFLICT)...")
+        rezultat2 = create_slot_reservation(db, rezervare_data)
+        
+        if "error" in rezultat2:
+            print(f"✅ Test Conflict Reușit: Sistemul a blocat suprapunerea. Mesaj: {rezultat2['error']}")
+        else:
+            print(f"❌ Eroare: Sistemul a permis suprapunerea! (BAD)")
+
+        # TEST 3: Conflict de Grupă (Alt profesor, aceleași grupe)
+        print(f"\n[Test 3] Verificăm conflictul de grupă (alt profesor, aceeași oră/grupe)...")
+        # Schimbăm doar profesorul (email-ul) și sala, dar păstrăm grupele și ora
+        rezervare_grupa_ocupata = rezervare_data.model_copy(update={
+            "email": "alt.profesor@unitbv.ro", 
+            "salaId": 24 # Altă sală
+        })
+        
+        rezultat3 = create_slot_reservation(db, rezervare_grupa_ocupata)
+        if "error" in rezultat3:
+            print(f"✅ Test Conflict Grupă Reușit: {rezultat3['error']}")
+        else:
+            print(f"❌ Eroare: Grupa a fost lăsată să fie în două locuri deodată!")
+
+    except Exception as e:
+        print(f"💥 Eroare neprevăzută în timpul testării: {e}")
+    finally:
+        # Ștergem datele de test pentru a nu polua DB-ul permanent (opțional)
+        # db.query(Rezervare).filter(Rezervare.materie == "Criptografie şi securitate informaţională").delete()
+        # db.commit()
+        db.close()
+        print(f"\n--- 🏁 Teste Finalizate ---")
