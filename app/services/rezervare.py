@@ -1,6 +1,6 @@
 # app\services\rezervari.py
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from app.models.models import Rezervare, Subgrupa, Profesor, Sala, Orar
 from app.schemas.user import RezervareSlotRequest
 
@@ -25,7 +25,7 @@ def create_slot_reservation(db: Session, req: RezervareSlotRequest):
         query_conflict = db.query(Rezervare).filter(
             Rezervare.zi == req.zi,
             Rezervare.saptamana == req.saptamana,
-            Rezervare.status == "rezervat",
+            func.lower(Rezervare.status) == func.lower("rezervat"),
             Rezervare.oraInceput < ora_final,
             (Rezervare.oraInceput + Rezervare.durata * 60) > ora_inceput
         )
