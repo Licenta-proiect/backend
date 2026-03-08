@@ -330,7 +330,7 @@ def group_slots_for_ui(db: Session, free_slots_raw: dict, current_semester: int)
                 week_data.append({
                     "zi_index": day_idx,
                     "zi_nume": day_map.get(day_idx),
-                    "data": data_str,
+                    "data": slot_date.strftime("%Y-%m-%d"),
                     "optiuni": day_slots
                 })
         
