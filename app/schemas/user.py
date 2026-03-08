@@ -1,7 +1,7 @@
 # app\schemas\user.py
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
-from datetime import datetime
+from datetime import date, datetime
 from app.models.models import UserRole
 from typing import List
 
@@ -88,3 +88,20 @@ class SlotLiberRequest(BaseModel):
 
     class Config:
         populate_by_name = True
+
+class RezervareSlotRequest(BaseModel):
+    email: EmailStr
+    sala_id: int = Field(..., alias="salaId")
+    grupe_ids: List[int] = Field(..., alias="grupeIds")
+    materie: str
+    tip_activitate: str = Field(..., alias="tipActivitate")
+    zi: int = Field(..., ge=1, le=6, description="1=Luni, 6=Sambata")
+    saptamana: int = Field(..., ge=1, le=14)
+    ora_start: str = Field(..., alias="oraStart", pattern=r"^\d{2}:\d{2}$")
+    durata: int = Field(..., ge=1, le=6)
+    data_rezervare: date = Field(..., alias="data") 
+    numar_persoane: Optional[int] = Field(0, alias="numarPersoane")
+
+    class Config:
+        populate_by_name = True
+        from_attributes = True
