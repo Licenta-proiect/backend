@@ -2,7 +2,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.models.models import Profesor, Orar, Subgrupa, Sala
+from app.models.models import Profesor, Orar, Subgrupa, Sala, User
+from app.services.auth import get_current_user
+from app.services.rezervare import get_teacher_reservations
 
 # Inițializezi router-ul
 router = APIRouter(prefix="/profesor", tags=["Profesori"])
@@ -255,3 +257,14 @@ async def get_sali_prin_materie(email: str, materie: str, db: Session = Depends(
         "materie": materie,
         "sali": rezultat
     }
+
+@router.get("/rezervari")
+def listare_rezervari_profesor(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Returnează lista tuturor rezervărilor făcute de profesorul logat,
+    cu statusul actualizat în funcție de timp.
+    """
+    return get_teacher_reservations(db, current_user.email)
