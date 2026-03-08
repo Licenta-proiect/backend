@@ -95,13 +95,13 @@ if __name__ == "__main__":
         # Marți (Ziua 2), Săptămâna 9, Ora 16:00
         rezervare_data = RezervareSlotRequest(
             email=test_email,
-            salaId=66,
+            salaId=24,
             grupeIds=[49, 50, 51],
             materie="Criptografie şi securitate informaţională",
             tipActivitate="Curs",
             zi=2,
             saptamana=9,
-            oraStart="16:00",
+            oraStart="18:00",
             durata=2,
             data=date(2026, 4, 28), # Data din output-ul tău de solver
             numarPersoane=50

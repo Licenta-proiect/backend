@@ -2,7 +2,7 @@
 from datetime import datetime
 from sqlalchemy import func, distinct
 from sqlalchemy.orm import Session
-from app.models.models import Orar, Subgrupa, Profesor, Sala
+from app.models.models import Orar, Subgrupa, Profesor, Sala, Rezervare
 from app.schemas.user import SlotLiberRequest
 from app.utils.time_helper import get_now
 from typing import List
@@ -12,6 +12,20 @@ from ortools.sat.python import cp_model
 from app.services.future_weeks import get_future_weeks_logic
 from app.utils.date_helper import get_calendar_date
 from .slot_alternativ import format_row, parse_weeks_from_info
+
+def format_rezervare_to_orar(rez: Rezervare, tag: str):
+    """
+    Transformă un obiect Rezervare într-un dicționar compatibil cu format_row,
+    pentru a fi procesat unitar de solver.
+    """
+    return {
+        "idURL": tag,
+        "weekDay": rez.zi,
+        "startHour": rez.oraInceput,
+        "duration": rez.durata,
+        "parity": 0,  # Rezervările ad-hoc sunt specifice unei săptămâni
+        "otherInfo": f"S{rez.saptamana}" 
+    }
 
 def get_profesor_id(db: Session, email: str):
     '''Identifică profesorul în baza de date folosind adresa de email.'''
@@ -96,7 +110,7 @@ def verifica_existenta_materie(db: Session, id_profesor: int, id_grupe: List[int
     return existent_entities_count == len(target_tags)
 
 def get_data(db: Session, req: SlotLiberRequest, current_semester: int):
-    '''Extrage datele din orar pentru profesor,subgrupe și săli'''
+    '''Extrage datele din orar ȘI rezervări pentru profesor, subgrupe și săli'''
     validare = valideaza_configuratie_grupe(req.grupe_ids, req.tip_activitate)
     if validare:
         return validare
@@ -113,20 +127,56 @@ def get_data(db: Session, req: SlotLiberRequest, current_semester: int):
     # Determinăm săptămâna maximă pe baza anului de studiu
     max_week_limit = get_max_week_for_groups(db, req.grupe_ids, current_semester)
 
-    # Extragem toate datele relevante într-un singur query pentru eficiență
+    # COLECTARE DATE DIN ORARUL OFICIAL
     tags_prof = [f"p{id_prof}"]
     tags_grupe = [f"g{gid}" for gid in req.grupe_ids]
     tags_sali = [f"s{sid}" for sid in req.sali_ids]
     all_tags = tags_prof + tags_grupe + tags_sali
 
     # Extrage toate datele din orar care au idURL în lista construită
-    query = db.query(Orar).filter(Orar.idURL.in_(all_tags))
+    query_orar = db.query(Orar).filter(Orar.idURL.in_(all_tags))
 
     # Filtrare după ZI (weekDay), dacă este specificată
     if req.zi is not None:
-        query = query.filter(Orar.weekDay == req.zi)
+        query_orar = query_orar.filter(Orar.weekDay == req.zi)
+    
+    orar_data = query_orar.all()
 
-    all_schedule_data = query.all()
+    # COLECTARE REZERVĂRI AD-HOC (Conflict prevention)
+    # Căutăm rezervările active care implică profesorul, sălile sau grupele selectate
+    query_rezervari = db.query(Rezervare).filter(
+        Rezervare.status == "rezervat"
+    )
+
+    if req.zi is not None:
+        query_rezervari = query_rezervari.filter(Rezervare.zi == req.zi)
+
+    # Executăm query-ul pentru rezervări
+    toate_rezervarile = query_rezervari.all()
+
+    # FILTRARE ȘI FORMATARE DATE
+    # Pregătim containerele pentru solver
+    prof_blocks = [format_row(r) for r in orar_data if r.idURL in tags_prof]
+    grupe_blocks = [format_row(r) for r in orar_data if r.idURL in tags_grupe]
+    sali_blocks = [format_row(r) for r in orar_data if r.idURL in tags_sali]
+
+    # Adăugăm rezervările ad-hoc în containerele corespunzătoare
+    for rez in toate_rezervarile:
+        # Dacă profesorul este implicat în această rezervare
+        if rez.profesor_id == id_prof:
+            prof_blocks.append(format_rezervare_to_orar(rez, f"p{id_prof}"))
+        
+        # Dacă sala este una din cele căutate
+        if rez.sala_id in req.sali_ids:
+            sali_blocks.append(format_rezervare_to_orar(rez, f"s{rez.sala_id}"))
+        
+        # Dacă oricare dintre grupele selectate este implicată în rezervare
+        # Verificăm intersecția dintre grupele rezervării și grupele cerute
+        rez_grupe_ids = [g.id for g in rez.grupe]
+        for gid in req.grupe_ids:
+            if gid in rez_grupe_ids:
+                grupe_blocks.append(format_rezervare_to_orar(rez, f"g{gid}"))
+                break # Evităm duplicatele dacă o rezervare are mai multe din grupele noastre
 
     # Filtrare SĂLI după Capacitate (dacă numar_persoane e furnizat)
     # Trebuie să verificăm în tabelul 'sali' dacă id-urile din sali_ids au capacitate >= numar_persoane
@@ -143,15 +193,13 @@ def get_data(db: Session, req: SlotLiberRequest, current_semester: int):
         if not valid_sala_ids:
             return {"error": f"Nicio sală selectată nu are capacitatea minimă de {req.numar_persoane} locuri."}
         
-        # Filtrăm datele din orar pentru a păstra doar constrângerile sălilor care au trecut testul capacității
-        # Nota: Datele despre Prof și Grupe rămân, filtrăm doar tag-urile de tip 's' care nu sunt în valid_sala_ids
-        tags_sali_invalide = [f"s{sid}" for sid in req.sali_ids if sid not in valid_sala_ids]
-        all_schedule_data = [d for d in all_schedule_data if d.idURL not in tags_sali_invalide]
-
+        # Păstrăm doar blocajele pentru sălile care au capacitate suficientă
+        sali_blocks = [b for b in sali_blocks if int(b['idURL'][1:]) in valid_sala_ids]
+    
     return {
-        "profesor": [format_row(r) for r in all_schedule_data if r.idURL in tags_prof],
-        "subgrupe": [format_row(r) for r in all_schedule_data if r.idURL in tags_grupe],
-        "sali": [format_row(r) for r in all_schedule_data if r.idURL in tags_sali],
+        "profesor": prof_blocks,
+        "subgrupe": grupe_blocks,
+        "sali": sali_blocks,
         "max_week_limit": max_week_limit
     }
 
