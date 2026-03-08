@@ -15,8 +15,9 @@ def create_slot_reservation(db: Session, req: RezervareSlotRequest):
         if not profesor:
             return {"error": "Profesorul nu a fost găsit în baza de date."}
 
-        ora_inceput = req.ora_start
-        ora_final = ora_inceput + (req.durata * 60)
+        ora_inceput = req.ora_start * 60 
+        durata_minute = req.durata * 60
+        ora_final = ora_inceput + durata_minute
 
         # VERIFICARE CONFLICTE (Sala, Profesor, Grupe)
         # Căutăm orice rezervare existentă care se suprapune cu intervalul dorit
@@ -25,7 +26,7 @@ def create_slot_reservation(db: Session, req: RezervareSlotRequest):
             Rezervare.saptamana == req.saptamana,
             func.lower(Rezervare.status) == func.lower("rezervat"),
             Rezervare.oraInceput < ora_final,
-            (Rezervare.oraInceput + Rezervare.durata * 60) > ora_inceput
+            (Rezervare.oraInceput + Rezervare.durata) > ora_inceput # Rezervare.durata e deja minute în DB
         )
 
         # Aplicăm filtrele de entitate: Sala SAU Profesor SAU Oricare dintre Grupe
@@ -58,7 +59,7 @@ def create_slot_reservation(db: Session, req: RezervareSlotRequest):
             materie=req.materie,
             tip=req.tip_activitate,
             oraInceput=ora_inceput,
-            durata=req.durata,
+            durata=durata_minute,
             zi=req.zi,
             saptamana=req.saptamana,
             data_calendaristica=req.data_rezervare,
@@ -99,7 +100,7 @@ if __name__ == "__main__":
             tipActivitate="Curs",
             zi=2,
             saptamana=9,
-            oraStart=18*60,
+            oraStart=18,
             durata=2,
             data=date(2026, 4, 28), # Data din output-ul tău de solver
             numarPersoane=50

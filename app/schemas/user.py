@@ -97,7 +97,7 @@ class RezervareSlotRequest(BaseModel):
     tip_activitate: str = Field(..., alias="tipActivitate")
     zi: int = Field(..., ge=1, le=6, description="1=Luni, 6=Sambata")
     saptamana: int = Field(..., ge=1, le=14)
-    ora_start: int = Field(..., alias="oraStart", ge=480, le=1320)
+    ora_start: int = Field(..., alias="oraStart", ge=8, le=21)
     durata: int = Field(..., ge=1, le=6)
     data_rezervare: date = Field(..., alias="data") 
     numar_persoane: Optional[int] = Field(0, alias="numarPersoane")
