@@ -22,7 +22,7 @@ def format_rezervare_to_orar(rez: Rezervare, tag: str):
         "idURL": tag,
         "weekDay": rez.zi,
         "startHour": rez.oraInceput,
-        "duration": rez.durata,
+        "duration": rez.durata * 60,
         "parity": 0,  # Rezervările ad-hoc sunt specifice unei săptămâni
         "otherInfo": f"S{rez.saptamana}" 
     }
@@ -259,7 +259,9 @@ def find_free_slots_cp_sat(db: Session, constraints: dict, sali_ids: List[int], 
 
                 # Non-Overlap constraints
                 for block in block_list:
-                    b_start, b_end = int(block['startHour']), int(block['startHour']) + int(block['duration'])
+                    b_start = int(block['startHour'])
+                    print(int(block['duration']))
+                    b_end = b_start + int(block['duration'])
                     o1, o2 = model.NewBoolVar('o1'), model.NewBoolVar('o2')
                     model.Add(end_var <= b_start).OnlyEnforceIf(o1)
                     model.Add(start_var >= b_end).OnlyEnforceIf(o2)

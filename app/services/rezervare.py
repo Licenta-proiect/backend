@@ -15,9 +15,7 @@ def create_slot_reservation(db: Session, req: RezervareSlotRequest):
         if not profesor:
             return {"error": "Profesorul nu a fost găsit în baza de date."}
 
-        # Convertim ora HH:MM în minute (ex: "08:00" -> 480)
-        h, m = map(int, req.ora_start.split(':'))
-        ora_inceput = h * 60 + m
+        ora_inceput = req.ora_start
         ora_final = ora_inceput + (req.durata * 60)
 
         # VERIFICARE CONFLICTE (Sala, Profesor, Grupe)
@@ -101,7 +99,7 @@ if __name__ == "__main__":
             tipActivitate="Curs",
             zi=2,
             saptamana=9,
-            oraStart="18:00",
+            oraStart=18*60,
             durata=2,
             data=date(2026, 4, 28), # Data din output-ul tău de solver
             numarPersoane=50
