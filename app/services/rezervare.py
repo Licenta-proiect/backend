@@ -2,7 +2,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 from app.models.models import Rezervare, Subgrupa, Profesor, Sala, Orar
-from app.schemas.user import RezervareSlotRequest
+from app.schemas.user import RezervareSlotRequest, AnulareRezervareRequest
 
 def create_slot_reservation(db: Session, req: RezervareSlotRequest):
     """
@@ -76,6 +76,26 @@ def create_slot_reservation(db: Session, req: RezervareSlotRequest):
         db.rollback()
         return {"error": f"Eroare la salvare: {str(e)}"}
     
+def cancel_reservation(db: Session, req: AnulareRezervareRequest):
+    rezervare = db.query(Rezervare).filter(Rezervare.id == req.rezervare_id).first()
+    
+    if not rezervare:
+        return {"error": "Rezervarea nu a fost găsită."}
+    
+    # Verificăm încă o dată în serviciu dacă rezervarea aparține profesorului
+    profesor = db.query(Profesor).filter(Profesor.emailAddress == req.email).first()
+    if not profesor or rezervare.profesor_id != profesor.id:
+        return {"error": "Nu aveți dreptul să anulați această rezervare."}
+
+    try:
+        rezervare.status = "anulat"
+        rezervare.motiv_anulare = req.motiv
+        db.commit()
+        return {"success": "Rezervarea a fost anulată cu succes."}
+    except Exception as e:
+        db.rollback()
+        return {"error": f"Eroare la anulare: {str(e)}"}
+
 if __name__ == "__main__":
     from app.db.session import SessionLocal
     from app.schemas.user import RezervareSlotRequest

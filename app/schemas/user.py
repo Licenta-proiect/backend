@@ -105,3 +105,8 @@ class RezervareSlotRequest(BaseModel):
     class Config:
         populate_by_name = True
         from_attributes = True
+
+class AnulareRezervareRequest(BaseModel):
+    rezervare_id: int
+    email: str
+    motiv: Optional[str] = "Nespecificat"

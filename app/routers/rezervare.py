@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.schemas.user import RezervareSlotRequest, SlotLiberRequest
+from app.schemas.user import RezervareSlotRequest, SlotLiberRequest, AnulareRezervareRequest
 from app.models.models import User
 from app.services.auth import get_current_user
-from app.services.rezervare import create_slot_reservation
+from app.services.rezervare import create_slot_reservation, cancel_reservation
 from app.services.slot_liber import get_data, find_free_slots_cp_sat, group_slots_for_ui
 from app.services.future_weeks import get_future_weeks_logic
 
@@ -87,6 +87,37 @@ def rezervare_slot_liber(
         )
 
     rezultat = create_slot_reservation(db, req)
+    
+    if "error" in rezultat:
+        raise HTTPException(status_code=400, detail=rezultat["error"])
+    
+    return rezultat
+
+from app.schemas.user import AnulareRezervareRequest # Importă schema nouă
+from app.services.rezervare import create_slot_reservation, cancel_reservation # Importă serviciul
+
+# ... (rutele de cautare si confirmare)
+
+@router.post("/anuleaza-rezervare")
+def anuleaza_rezervare(
+    req: AnulareRezervareRequest, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Anulează o rezervare existentă.
+    Verifică dacă utilizatorul logat este proprietarul rezervării.
+    """
+    
+    # Verificăm identitatea (token-ul trebuie să coincidă cu email-ul din request)
+    if current_user.email != req.email:
+        raise HTTPException(
+            status_code=403, 
+            detail="Puteți anula doar propriile rezervări."
+        )
+
+    # Apelăm serviciul de anulare
+    rezultat = cancel_reservation(db, req)
     
     if "error" in rezultat:
         raise HTTPException(status_code=400, detail=rezultat["error"])
