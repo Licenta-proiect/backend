@@ -52,7 +52,14 @@ def cauta_sloturi_libere(req: SlotLiberRequest, db: Session = Depends(get_db)):
     ui_report = group_slots_for_ui(db, free_slots_raw, current_semester)
 
     return {
-        "semester": current_semester,
+        "search_context": {
+            "email": req.email,
+            "materie": req.materie,
+            "tipActivitate": req.tip_activitate,
+            "grupeIds": req.grupe_ids,
+            "durata": req.durata,
+            "numarPersoane": req.numar_persoane or 0
+        },
         "active_weeks": filtered_weeks,
         "slots": ui_report
     }

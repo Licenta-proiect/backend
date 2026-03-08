@@ -274,9 +274,9 @@ def find_free_slots_cp_sat(db: Session, constraints: dict, sali_ids: List[int], 
                     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
                         f_start, f_end = solver.Value(start_var), solver.Value(end_var)
                         day_results.append({
-                            "start": f_start, "end": f_end,
-                            "formatted": f"{f_start//60:02d}:{f_start%60:02d} - {f_end//60:02d}:{f_end%60:02d}",
-                            "sala": nume_sali.get(sid, f"Sala {sid}")
+                            "start": f_start,
+                            "end": f_end,
+                            "sala_id": sid
                         })
                         current_search_start = f_start + 60
                     else: break
@@ -317,27 +317,21 @@ def group_slots_for_ui(db: Session, free_slots_raw: dict, current_semester: int)
             except (ValueError, TypeError):
                 continue
 
-            # 2Grupăm sloturile și filtrăm orele dacă e ziua curentă
-            rooms_in_day = {}
+            # Grupăm sloturile direct într-un format plat
+            day_slots = []
             for s in slots:
-                room_name = s['sala']
-                if room_name not in rooms_in_day:
-                    rooms_in_day[room_name] = []
-                
-                ora_start = s['formatted'].split(" - ")[0]
-                rooms_in_day[room_name].append(ora_start)
+                day_slots.append({
+                    "sala_id": s['sala_id'],
+                    "ora_start": s['start'] // 60, 
+                    "ora_final": s['end'] // 60,   
+                })
             
-            # Verificăm dacă mai avem camere cu ore valide după filtrare
-            day_ui_list = [
-                {"sala": r_name, "ore_posibile": sorted(list(set(starts)))} 
-                for r_name, starts in rooms_in_day.items() if starts
-            ]
-
-            if day_ui_list:
+            if day_slots:
                 week_data.append({
-                    "ziua": day_map.get(day_idx),
+                    "zi_index": day_idx,
+                    "zi_nume": day_map.get(day_idx),
                     "data": data_str,
-                    "locatii": day_ui_list
+                    "optiuni": day_slots
                 })
         
         if week_data:
