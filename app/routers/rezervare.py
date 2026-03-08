@@ -1,10 +1,11 @@
+# app\routers\rezervare.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.schemas.user import RezervareSlotRequest, SlotLiberRequest, AnulareRezervareRequest
 from app.models.models import User
 from app.services.auth import get_current_user
-from app.services.rezervare import create_slot_reservation, cancel_reservation
+from app.services.rezervare import create_slot_reservation, cancel_reservation, get_teacher_reservations
 from app.services.slot_liber import get_data, find_free_slots_cp_sat, group_slots_for_ui
 from app.services.future_weeks import get_future_weeks_logic
 
@@ -118,3 +119,14 @@ def anuleaza_rezervare(
         raise HTTPException(status_code=400, detail=rezultat["error"])
     
     return rezultat
+
+@router.get("/istoric")
+def listare_rezervari_profesor(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Returnează lista tuturor rezervărilor făcute de profesorul logat,
+    cu statusul actualizat în funcție de timp.
+    """
+    return get_teacher_reservations(db, current_user.email)

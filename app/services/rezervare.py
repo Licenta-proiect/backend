@@ -93,6 +93,9 @@ def create_slot_reservation(db: Session, req: RezervareSlotRequest):
         return {"error": f"Eroare la salvare: {str(e)}"}
     
 def cancel_reservation(db: Session, req: AnulareRezervareRequest):
+    '''
+    Anulează o rezervare validă. Nu se poate anula o rezervare din trecut, sau în acceași zi.
+    '''
     rezervare = db.query(Rezervare).filter(Rezervare.id == req.rezervare_id).first()
     
     if not rezervare:
@@ -126,6 +129,52 @@ def cancel_reservation(db: Session, req: AnulareRezervareRequest):
     except Exception as e:
         db.rollback()
         return {"error": f"Eroare la anulare: {str(e)}"}
+
+def get_teacher_reservations(db: Session, email: str):
+    """
+    Obține toate rezervările unui profesor și calculează statusul (rezervat/anulat/efectuat).
+    """
+    profesor = db.query(Profesor).filter(Profesor.emailAddress == email).first()
+    if not profesor:
+        return []
+
+    rezervari = db.query(Rezervare).filter(Rezervare.profesor_id == profesor.id).all()
+    
+    now = get_now()
+    today_date = now.date()
+    current_time_minutes = now.hour * 60 + now.minute
+
+    result = []
+    for r in rezervari:
+        # Păstrăm statusul original din DB (rezervat/anulat)
+        status_final = r.status 
+
+        # Dacă statusul este 'rezervat' dar timpul a trecut, îl raportăm ca 'efectuat'
+        if r.status.lower() == "rezervat":
+            if r.data_calendaristica < today_date:
+                status_final = "efectuată"
+            elif r.data_calendaristica == today_date:
+                # Dacă e azi, verificăm dacă s-a terminat și durata
+                ora_final = r.oraInceput + r.durata
+                if current_time_minutes > ora_final:
+                    status_final = "efectuată"
+
+        result.append({
+            "id": r.id,
+            "materie": r.materie,
+            "tip": r.tip,
+            "sala": r.sala.name if r.sala else "N/A",
+            "saptamana": r.saptamana,
+            "zi": r.zi,
+            "data": r.data_calendaristica,
+            "ora_start": r.oraInceput // 60,
+            "durata": r.durata // 60,
+            "status": status_final,
+            "motiv_anulare": r.motiv_anulare if r.status == "anulat" else None
+        })
+    
+    # Sortăm să vedem cele mai recente/viitoare primele
+    return sorted(result, key=lambda x: x['data'], reverse=True)
 
 if __name__ == "__main__":
     from app.db.session import SessionLocal
