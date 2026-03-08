@@ -159,11 +159,14 @@ def get_teacher_reservations(db: Session, email: str):
                 if current_time_minutes > ora_final:
                     status_final = "efectuată"
 
+        nume_grupe = [f"{g.specializationShortName} {g.groupName}{g.subgroupIndex}" for g in r.grupe]
+
         result.append({
             "id": r.id,
             "materie": r.materie,
             "tip": r.tip,
             "sala": r.sala.name if r.sala else "N/A",
+            "grupe": nume_grupe,
             "saptamana": r.saptamana,
             "zi": r.zi,
             "data": r.data_calendaristica,
