@@ -11,6 +11,21 @@ def create_slot_reservation(db: Session, req: RezervareSlotRequest):
     Include validarea împotriva orarului oficial și a rezervărilor ad-hoc existente.
     """
     try:
+        # VERIFICARE TIMP (Să nu fie în trecut)
+        now = get_now()
+        today_date = now.date()
+        # Ora curentă convertită în minute de la începutul zilei pentru comparare
+        current_time_minutes = now.hour * 60 + now.minute
+        ora_inceput_minutes = req.ora_start * 60
+
+        # Verificăm dacă data este în trecut
+        if req.data_rezervare < today_date:
+            return {"error": "Nu se pot face rezervări pentru zile care au trecut."}
+        
+        # Verificăm dacă este astăzi, dar ora de început a trecut deja
+        if req.data_rezervare == today_date and ora_inceput_minutes < current_time_minutes:
+            return {"error": "Nu se pot face rezervări pentru un interval orar care a început deja."}
+
         # Identificăm profesorul (folosind email-ul din request)
         profesor = db.query(Profesor).filter(Profesor.emailAddress == req.email).first()
         if not profesor:
