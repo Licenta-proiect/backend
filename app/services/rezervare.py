@@ -83,6 +83,10 @@ def cancel_reservation(db: Session, req: AnulareRezervareRequest):
     if not rezervare:
         return {"error": "Rezervarea nu a fost găsită."}
     
+    # Nu putem anula o rezervare care este deja 'anulat' sau 'efectuat'
+    if rezervare.status.lower() != "rezervat":
+        return {"error": f"Această rezervare este anulată deja."}
+
     now = get_now()
     today_date = now.date()
 
