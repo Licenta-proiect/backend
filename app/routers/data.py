@@ -96,7 +96,7 @@ async def get_future_weeks(db: Session = Depends(get_db)):
     }
 
 @router.post("/weeks-valide")
-async def get_valid_weeks(grupe_ids: List[int] = Body(...), db: Session = Depends(get_db)):
+async def get_valid_weeks(grupe_ids: List[int] = Body(..., embed=True), db: Session = Depends(get_db)):
     '''
     Returnează săptămânile valide pentru grupe, ținând cont de anul de studiu.
     '''
