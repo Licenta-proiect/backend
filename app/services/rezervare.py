@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 from app.models.models import Rezervare, Subgrupa, Profesor, Sala, Orar
 from app.schemas.user import RezervareSlotRequest, AnulareRezervareRequest
+from app.utils.time_helper import get_now
 
 def create_slot_reservation(db: Session, req: RezervareSlotRequest):
     """
@@ -82,7 +83,18 @@ def cancel_reservation(db: Session, req: AnulareRezervareRequest):
     if not rezervare:
         return {"error": "Rezervarea nu a fost găsită."}
     
-    # Verificăm încă o dată în serviciu dacă rezervarea aparține profesorului
+    now = get_now()
+    today_date = now.date()
+
+    # 1. Verificăm dacă rezervarea este în trecut
+    if rezervare.data_calendaristica < today_date:
+        return {"error": "Nu se pot anula rezervări din zilele trecute."}
+    
+    # 2. Verificăm dacă rezervarea este astăzi
+    if rezervare.data_calendaristica == today_date:
+        return {"error": "Anularea unei rezervări nu se poate face în aceeași zi cu evenimentul."}
+
+    # Verificăm dacă rezervarea aparține profesorului
     profesor = db.query(Profesor).filter(Profesor.emailAddress == req.email).first()
     if not profesor or rezervare.profesor_id != profesor.id:
         return {"error": "Nu aveți dreptul să anulați această rezervare."}

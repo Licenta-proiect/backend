@@ -93,11 +93,6 @@ def rezervare_slot_liber(
     
     return rezultat
 
-from app.schemas.user import AnulareRezervareRequest # Importă schema nouă
-from app.services.rezervare import create_slot_reservation, cancel_reservation # Importă serviciul
-
-# ... (rutele de cautare si confirmare)
-
 @router.post("/anuleaza-rezervare")
 def anuleaza_rezervare(
     req: AnulareRezervareRequest, 
