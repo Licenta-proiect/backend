@@ -299,12 +299,12 @@ def group_slots_for_ui(db: Session, free_slots_raw: dict, current_semester: int)
     today_date = now.date()
 
     for week, days in free_slots_raw.items():
-        week_data = {}
+        week_data = []
         for day_idx, slots in days.items():
             if not slots:
                 continue
 
-            # 1. Calculăm data calendaristică a slotului
+            # Calculăm data calendaristică a slotului
             data_str = get_calendar_date(db, week, day_idx, current_semester)
             
             try:
@@ -317,7 +317,7 @@ def group_slots_for_ui(db: Session, free_slots_raw: dict, current_semester: int)
             except (ValueError, TypeError):
                 continue
 
-            # 2. Grupăm sloturile și filtrăm orele dacă e ziua curentă
+            # 2Grupăm sloturile și filtrăm orele dacă e ziua curentă
             rooms_in_day = {}
             for s in slots:
                 room_name = s['sala']
@@ -334,8 +334,11 @@ def group_slots_for_ui(db: Session, free_slots_raw: dict, current_semester: int)
             ]
 
             if day_ui_list:
-                day_label = f"{day_map.get(day_idx, 'Ziua ' + str(day_idx))} ({data_str})"
-                week_data[day_label] = day_ui_list
+                week_data.append({
+                    "ziua": day_map.get(day_idx),
+                    "data": data_str,
+                    "locatii": day_ui_list
+                })
         
         if week_data:
             grouped[week] = week_data
