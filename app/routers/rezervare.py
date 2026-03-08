@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.schemas.user import RezervareSlotRequest, SlotLiberRequest
+from app.models.models import User
+from app.services.auth import get_current_user
 from app.services.rezervare import create_slot_reservation
 from app.services.slot_liber import get_data, find_free_slots_cp_sat, group_slots_for_ui
 from app.services.future_weeks import get_future_weeks_logic
@@ -66,15 +68,27 @@ def cauta_sloturi_libere(req: SlotLiberRequest, db: Session = Depends(get_db)):
     }
 
 @router.post("/confirma-rezervare")
-def rezervare_slot_liber(req: RezervareSlotRequest, db: Session = Depends(get_db)):
+def rezervare_slot_liber(
+    req: RezervareSlotRequest, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Verifică dacă user-ul este logat
+):
     """
     Salvează rezervarea aleasă de utilizator în baza de date.
+    Verifică dacă email-ul din cerere coincide cu cel al utilizatorului logat.
     """
+
+    # Verificăm dacă profesorul logat încearcă să facă 
+    # o rezervare pentru propriul său email, nu pentru al altcuiva.
+    if current_user.email != req.email:
+        raise HTTPException(
+            status_code=403, 
+            detail="Nu aveți permisiunea de a crea o rezervare pentru alt profesor."
+        )
+
     rezultat = create_slot_reservation(db, req)
     
     if "error" in rezultat:
-        # Dacă între timp slotul a fost ocupat de altcineva (race condition)
-        # sau datele sunt invalide, returnăm eroare 400
         raise HTTPException(status_code=400, detail=rezultat["error"])
     
     return rezultat
