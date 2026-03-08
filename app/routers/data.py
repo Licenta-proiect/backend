@@ -111,6 +111,6 @@ async def get_valid_weeks(grupe_ids: List[int] = Body(...), db: Session = Depend
     filtered_weeks = [w for w in active_weeks if w <= max_week_limit]
     
     return {
-        "weeks": filtered_weeks,
+        "active_weeks": filtered_weeks,
         "max_week_limit": max_week_limit
     }
