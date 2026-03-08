@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.models import Orar, Subgrupa, Profesor, Sala
 from app.schemas.user import SlotAlternativRequest
+from app.services.rezervare import get_reservations_by_subgroups
 from app.services.slot_alternativ import get_data_for_optimization, find_alternative_slots
 from app.services.future_weeks import get_future_weeks_logic
 from app.utils.time_helper import get_now
@@ -196,3 +197,11 @@ async def cauta_sloturi_alternative(
     except Exception as e:
         print(f"❌ Eroare: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Eroare internă: {str(e)}")
+    
+@router.get("/rezervari")
+def get_all_subgroup_reservations(db: Session = Depends(get_db)):
+    """
+    Returnează lista tuturor recuperărilor (rezervărilor) din sistem, 
+    grupate după ID-ul subgrupei.
+    """
+    return get_reservations_by_subgroups(db)

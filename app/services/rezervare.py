@@ -231,6 +231,65 @@ def get_all_reservations_admin(db: Session):
     # Sortăm descrescător după dată (cele mai noi/viitoare primele)
     return sorted(result, key=lambda x: x['data'], reverse=True)
 
+def get_reservations_by_subgroups(db: Session):
+    """
+    Returnează toate rezervările grupate după ID-ul subgrupei.
+    Include numele profesorului și statusul dinamic (efectuată/rezervat/anulat).
+    """
+
+    # Luăm toate rezervările care au grupe asociate
+    rezervari = db.query(Rezervare).join(Rezervare.grupe).all()
+    
+    now = get_now()
+    today_date = now.date()
+    current_time_minutes = now.hour * 60 + now.minute
+
+    rezervari_grupate = {}
+
+    for r in rezervari:
+        # Calcul status dinamic
+        status_final = r.status 
+        if r.status.lower() == "rezervat":
+            if r.data_calendaristica < today_date:
+                status_final = "efectuată"
+            elif r.data_calendaristica == today_date:
+                ora_final = r.oraInceput + r.durata
+                if current_time_minutes > ora_final:
+                    status_final = "efectuată"
+
+        # Date profesor din relația profesor_titular
+        nume_profesor = f"{r.profesor_titular.lastName} {r.profesor_titular.firstName}" if r.profesor_titular else "N/A"
+        
+        # Numele tuturor grupelor care participă la această rezervare
+        nume_grupe_display = [f"{g.specializationShortName} {g.groupName}{g.subgroupIndex}" for g in r.grupe]
+
+        rezervare_data = {
+            "id": r.id,
+            "profesor": nume_profesor,
+            "email_profesor": r.profesor_titular.emailAddress if r.profesor_titular else "N/A",
+            "materie": r.materie,
+            "tip": r.tip,
+            "sala": r.sala.name if r.sala else "N/A",
+            "grupe_participante": nume_grupe_display,
+            "data": r.data_calendaristica.isoformat(),
+            "ora_start": r.oraInceput // 60,
+            "durata": r.durata // 60,
+            "status": status_final,
+            "motiv_anulare": r.motiv_anulare if r.status == "anulat" else None
+        }
+
+        # Grupăm pentru fiecare subgrupă participantă
+        for g in r.grupe:
+            if g.id not in rezervari_grupate:
+                rezervari_grupate[g.id] = []
+            rezervari_grupate[g.id].append(rezervare_data)
+
+    # Sortare cronologică pentru fiecare grupă
+    for gid in rezervari_grupate:
+        rezervari_grupate[gid].sort(key=lambda x: x['data'], reverse=True)
+
+    return rezervari_grupate
+
 if __name__ == "__main__":
     from app.db.session import SessionLocal
     from app.schemas.user import RezervareSlotRequest
