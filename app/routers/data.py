@@ -1,9 +1,12 @@
 # app\routers\data.py
-from fastapi import APIRouter, Depends
+from typing import List
+
+from fastapi import APIRouter, Body, Depends
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.models import Subgrupa, Profesor, Sala, Orar
 from app.services.future_weeks import get_future_weeks_logic
+from app.services.slot_liber import get_max_week_for_groups
 
 router = APIRouter(prefix="/data", tags=["Data"])
 
@@ -90,4 +93,24 @@ async def get_future_weeks(db: Session = Depends(get_db)):
         "current_semester": current_semester,
         "active_weeks": active_weeks,
         "current_status": current_status
+    }
+
+@router.post("/weeks-valide")
+async def get_valid_weeks(grupe_ids: List[int] = Body(...), db: Session = Depends(get_db)):
+    '''
+    Returnează săptămânile valide pentru grupe, ținând cont de anul de studiu.
+    '''
+    
+    # Determinăm semestrul și săptămânile de curs generale din calendar
+    current_semester, active_weeks, _, _ = get_future_weeks_logic(db)
+    
+    # Determinăm limita superioară pentru grupele selectate (10 sau 14)
+    max_week_limit = get_max_week_for_groups(db, grupe_ids, current_semester)
+    
+    # Filtrăm săptămânile active care depășesc limita grupei
+    filtered_weeks = [w for w in active_weeks if w <= max_week_limit]
+    
+    return {
+        "weeks": filtered_weeks,
+        "max_week_limit": max_week_limit
     }
