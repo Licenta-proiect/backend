@@ -148,25 +148,61 @@ async def get_profesor_sali(email: str, db: Session = Depends(get_db)):
     }
 
 @router.get("/grupe-materie")
-async def get_grupe_prin_materie(email: str, materie: str, db: Session = Depends(get_db)):
+async def get_grupe_prin_materie(
+    email: str, 
+    materie: str, 
+    tip: str = None, 
+    db: Session = Depends(get_db)
+):
     """
-    Identifică grupele, de la facultatea FIESC, la care predă un anumit profesor o anumită materie.
+    Identifică grupele la care predă un profesor o materie.
+    Dacă tipul este 'Curs', caută și grupele de la specializări diferite (comasate).
     """
-    # 1. Identificăm profesorul după email pentru a-i obține ID-ul numeric
+    # 1. Identificăm profesorul
     profesor = db.query(Profesor).filter(Profesor.emailAddress == email).first()
     if not profesor:
         raise HTTPException(status_code=404, detail="Profesorul nu a fost găsit.")
 
-    # 2. Căutăm în Orar înregistrările de tip grupă ('g%') care aparțin 
-    # profesorului respectiv și materiei specificate
-    grupe_ids_query = db.query(Orar.idURL).filter(
+    # 2. Obținem setul de date "ancoră" (grupele care au materia cu numele exact)
+    # Căutăm înregistrările de tip grupă ('g%')
+    ancora_query = db.query(Orar).filter(
         Orar.teacherID == profesor.id,
         Orar.idURL.like('g%'),
         Orar.topicLongName == materie
-    ).distinct().all()
+    )
+    
+    if tip:
+        ancora_query = ancora_query.filter(Orar.typeLongName == tip)
+        
+    ancora_rows = ancora_query.all()
+    
+    # ID-urile grupelor inițiale și numele lor scurte pentru cross-check
+    ids_set = {int(row.idURL[1:]) for row in ancora_rows if row.idURL and len(row.idURL) > 1}
+    nume_grupe_initiale = {row.grupa for row in ancora_rows if row.grupa}
 
-    # 3. Extragem ID-urile numerice ale grupelor (eliminăm prefixul 'g')
-    ids_set = {int(row[0][1:]) for row in grupe_ids_query if row[0] and len(row[0]) > 1}
+    # 3. Logica specială pentru CURS (Căutare grupe comasate/specializări diferite)
+    if tip and "curs" in tip.lower():
+        for row in ancora_rows:
+            # Căutăm evenimente simultane ale aceluiași profesor, în aceeași sală, dar cu alt nume de materie
+            potentiale_comasate = db.query(Orar).filter(
+                Orar.teacherID == profesor.id,
+                Orar.idURL.like('g%'),
+                Orar.weekDay == row.weekDay,
+                Orar.startHour == row.startHour,
+                Orar.duration == row.duration,
+                Orar.roomId == row.roomId,
+                Orar.typeLongName == row.typeLongName,
+                Orar.topicLongName != materie  # Materie cu nume diferit
+            ).all()
+
+            for p in potentiale_comasate:
+                # Validare SIMETRICĂ prin otherInfo
+                # A: Grupa găsită (p) trebuie să aibă în otherInfo numele grupei inițiale (row.grupa)
+                # B: Grupa inițială (row) trebuie să aibă în otherInfo numele grupei găsite (p.grupa)
+                # Verificăm dacă există referințe încrucișate în câmpul otherInfo
+                if p.otherInfo and row.grupa and row.grupa in p.otherInfo:
+                    if row.otherInfo and p.grupa and p.grupa in row.otherInfo:
+                        ids_set.add(int(p.idURL[1:]))
 
     if not ids_set:
         return {
@@ -177,7 +213,7 @@ async def get_grupe_prin_materie(email: str, materie: str, db: Session = Depends
             "grupe": []
         }
 
-    # 4. Obținem detaliile grupelor din tabelul Subgrupa, ordonate după nume și index
+    # 4. Obținem detaliile complete pentru toate ID-urile colectate
     grupe_detalii = db.query(Subgrupa).filter(
         Subgrupa.id.in_(list(ids_set))
     ).order_by(
@@ -185,7 +221,6 @@ async def get_grupe_prin_materie(email: str, materie: str, db: Session = Depends
         Subgrupa.subgroupIndex.asc()
     ).all()
 
-    # 5. Returnăm rezultatul în formatul standard utilizat la /grupe
     rezultat = [
         {
             "id": g.id,
@@ -201,6 +236,7 @@ async def get_grupe_prin_materie(email: str, materie: str, db: Session = Depends
         "lastName": profesor.lastName,
         "firstName": profesor.firstName,
         "materie": materie,
+        "tip_selectat": tip,
         "grupe": rezultat
     }
 
