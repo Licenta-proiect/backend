@@ -14,6 +14,7 @@ def create_slot_reservation(db: Session, req: RezervareSlotRequest):
         # VERIFICARE TIMP (Să nu fie în trecut)
         now = get_now()
         today_date = now.date()
+
         # Ora curentă convertită în minute de la începutul zilei pentru comparare
         current_time_minutes = now.hour * 60 + now.minute
         ora_inceput_minutes = req.ora_start * 60
@@ -30,6 +31,25 @@ def create_slot_reservation(db: Session, req: RezervareSlotRequest):
         profesor = db.query(Profesor).filter(Profesor.emailAddress == req.email).first()
         if not profesor:
             return {"error": "Profesorul nu a fost găsit în baza de date."}
+
+        # Logică Nume Materie (Curs Comasat)
+        nume_final_materie = req.materie
+        
+        if req.tip_activitate.lower() == "curs":
+            # Căutăm denumirile unice ale materiei predate de acest profesor 
+            # pentru grupele selectate, la acest tip de activitate.
+            materii_gasite = db.query(Orar.topicLongName).distinct().filter(
+                Orar.idURL.in_([f"g{gid}" for gid in req.grupe_ids]),
+                Orar.teacherID == profesor.id,
+                func.lower(Orar.typeLongName) == "curs"
+            ).all()
+
+            if materii_gasite:
+                # Extragem string-urile și eliminăm duplicatele/None
+                lista_nume = list(set([m[0] for m in materii_gasite if m[0]]))
+                # Dacă avem mai multe denumiri, le concatenăm cu " / "
+                # Altfel, dacă e doar una, rămâne aceea (chiar dacă e diferită de req.materie)
+                nume_final_materie = " / ".join(lista_nume)
 
         ora_inceput = req.ora_start * 60 
         durata_minute = req.durata * 60
@@ -72,7 +92,7 @@ def create_slot_reservation(db: Session, req: RezervareSlotRequest):
         noua_rezervare = Rezervare(
             profesor_id=profesor.id,
             sala_id=req.sala_id,
-            materie=req.materie,
+            materie=nume_final_materie,
             tip=req.tip_activitate,
             oraInceput=ora_inceput,
             durata=durata_minute,
