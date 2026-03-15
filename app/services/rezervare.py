@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 from app.models.models import Rezervare, Subgrupa, Profesor, Sala, Orar
 from app.schemas.user import RezervareSlotRequest, AnulareRezervareRequest
+from app.services.slot_liber import verifica_existenta_materie
 from app.utils.time_helper import get_now
 
 def create_slot_reservation(db: Session, req: RezervareSlotRequest):
@@ -32,30 +33,48 @@ def create_slot_reservation(db: Session, req: RezervareSlotRequest):
         if not profesor:
             return {"error": "Profesorul nu a fost găsit în baza de date."}
 
+        if not verifica_existenta_materie(db, profesor.id, req.grupe_ids, req.materie, req.tip_activitate):
+            return {"error": "Materia sau tipul de activitate nu a fost găsit în orarul profesorului sau al grupelor."}
+
         # Logică Nume Materie (Curs Comasat)
         nume_final_materie = req.materie
+        tip_lower = req.tip_activitate.lower()
         
-        if req.tip_activitate.lower() == "curs":
-            # Căutăm denumirile unice ale materiei predate de acest profesor 
-            # pentru grupele selectate, la acest tip de activitate.
-            materii_gasite = db.query(Orar.topicLongName).distinct().filter(
-                Orar.idURL.in_([f"g{gid}" for gid in req.grupe_ids]),
+        if "curs" in tip_lower:
+            # Găsim întâi "Ancorele" profesorului (sloturile din orar care corespund materiei selectate)
+            ancore_prof = db.query(Orar).filter(
+                Orar.idURL == f"p{profesor.id}",
                 Orar.teacherID == profesor.id,
-                func.lower(Orar.typeLongName) == "curs"
+                func.lower(Orar.topicLongName) == func.lower(req.materie),
+                func.lower(Orar.typeLongName) == tip_lower
             ).all()
 
-            if materii_gasite:
-                # Extragem string-urile și eliminăm duplicatele/None
-                lista_nume = list(set([m[0] for m in materii_gasite if m[0]]))
-                # Dacă avem mai multe denumiri, le concatenăm cu " / "
-                # Altfel, dacă e doar una, rămâne aceea (chiar dacă e diferită de req.materie)
-                nume_final_materie = " / ".join(lista_nume)
+            if ancore_prof:
+                toate_numele = set()
+                # Pentru fiecare ancoră găsită, căutăm ce materii au grupele selectate în acele sloturi
+                for ancora in ancore_prof:
+                    materii_slot = db.query(Orar.topicLongName).filter(
+                        Orar.idURL.in_([f"g{gid}" for gid in req.grupe_ids]),
+                        Orar.teacherID == profesor.id,
+                        Orar.weekDay == ancora.weekDay,
+                        Orar.startHour == ancora.startHour,
+                        Orar.duration == ancora.duration,
+                        Orar.roomId == ancora.roomId,
+                        func.lower(Orar.typeLongName) == tip_lower
+                    ).all()
+                    
+                    for m in materii_slot:
+                        if m[0]: toate_numele.add(m[0])
+                
+                # Dacă am găsit materii (chiar și cu nume diferite), le unim
+                if toate_numele:
+                    nume_final_materie = " / ".join(sorted(list(toate_numele)))
 
+        # VERIFICARE CONFLICTE (Sala, Profesor, Grupe)
         ora_inceput = req.ora_start * 60 
         durata_minute = req.durata * 60
         ora_final = ora_inceput + durata_minute
 
-        # VERIFICARE CONFLICTE (Sala, Profesor, Grupe)
         # Căutăm orice rezervare existentă care se suprapune cu intervalul dorit
         query_conflict = db.query(Rezervare).filter(
             Rezervare.zi == req.zi,
