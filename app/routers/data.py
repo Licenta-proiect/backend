@@ -1,7 +1,7 @@
 # app\routers\data.py
 from typing import List
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.db.session import get_db
@@ -96,8 +96,8 @@ async def get_future_weeks(db: Session = Depends(get_db)):
         "current_status": current_status
     }
 
-@router.post("/weeks-valide")
-async def get_valid_weeks(grupe_ids: List[int] = Body(..., embed=True), db: Session = Depends(get_db)):
+@router.get("/weeks-valide")
+async def get_valid_weeks(grupe_ids: List[int] = Query(...), db: Session = Depends(get_db)):
     '''
     Returnează săptămânile valide pentru grupe, ținând cont de anul de studiu.
     '''
