@@ -100,28 +100,38 @@ def verifica_existenta_materie(db: Session, id_profesor: int, id_grupe: List[int
         Orar.teacherID == id_profesor,
         func.lower(Orar.topicLongName) == func.lower(materie),
         func.lower(Orar.typeLongName) == func.lower(tip_materie)
-    ).first()
+    ).all()
 
     if not prof_record:
         return False
 
-    # 2. Validare pentru fiecare grupă
+    # 2. Validare pentru fiecare grupă în parte
     for gid in id_grupe:
         tag_grupa = f"g{gid}"
+        gasit_pentru_grupa = False
         
         if "curs" in tip_lower:
-            # LOGICĂ CURS: Verificăm dacă profesorul predă cursul la această grupă, 
-            # indiferent dacă numele materiei diferă puțin (ex: "Mate 1" vs "Mate")
-            grupa_has_prof = db.query(Orar).filter(
-                Orar.idURL == tag_grupa,
-                Orar.teacherID == id_profesor,
-                func.lower(Orar.typeLongName) == tip_lower
-            ).first()
+            # Căutăm dacă grupa are un slot simultan cu ORICARE dintre orele profesorului
+            for ancora in prof_record:
+                match_query = db.query(Orar).filter(
+                    Orar.idURL == tag_grupa,
+                    Orar.teacherID == id_profesor,
+                    Orar.weekDay == ancora.weekDay,
+                    Orar.startHour == ancora.startHour,
+                    Orar.duration == ancora.duration,
+                    Orar.roomId == ancora.roomId,
+                    func.lower(Orar.typeLongName) == tip_lower
+                ).first()
+
+                if match_query:
+                    gasit_pentru_grupa = True
+                    break # Am găsit grupa la una din orele prof-ului, ieșim din bucla ancorelor
             
-            if not grupa_has_prof:
+            # Verificarea se face AICI (după ce am verificat toate ancorele pentru această grupă)
+            if not gasit_pentru_grupa:
                 return False
         else:
-            # LOGICĂ STRICTĂ (Lab/Sem/Proiect): Materia și profesorul trebuie să coincidă exact
+            # (Lab/Sem/Proiect): Materia și profesorul trebuie să coincidă exact
             grupa_has_exact_topic = db.query(Orar).filter(
                 Orar.idURL == tag_grupa,
                 Orar.teacherID == id_profesor,
