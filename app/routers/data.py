@@ -2,6 +2,7 @@
 from typing import List
 
 from fastapi import APIRouter, Body, Depends
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.models import Subgrupa, Profesor, Sala, Orar
@@ -114,3 +115,33 @@ async def get_valid_weeks(grupe_ids: List[int] = Body(..., embed=True), db: Sess
         "active_weeks": filtered_weeks,
         "max_week_limit": max_week_limit
     }
+
+@router.get("/tipuri-activitate-profesor")
+async def get_tipuri_activitate_profesor(
+    email: str, 
+    materie: str, 
+    db: Session = Depends(get_db)
+):
+    """
+    Returnează tipurile de activitate (Curs, Laborator, etc.) pe care un profesor
+    le are în orar pentru o anumită materie.
+    """
+    # Găsim profesorul după email pentru a-i afla ID-ul
+    profesor = db.query(Profesor).filter(Profesor.emailAddress == email).first()
+    if not profesor:
+        return []
+
+    # Construim string-ul de căutare pentru idUrl (formatul p + id)
+    prof_url_id = f"p{profesor.id}"
+
+    # Căutăm în Orar tipurile distincte
+    # Verificăm unde idUrl conține id-ul profesorului și materia corespunde
+    query = db.query(Orar.typeLongName).distinct().filter(
+        Orar.idURL == prof_url_id,
+        func.lower(Orar.topicLongName) == func.lower(materie)
+    ).all()
+
+    # Curățăm rezultatele
+    tipuri = sorted([t[0] for t in query if t[0]])
+
+    return tipuri
