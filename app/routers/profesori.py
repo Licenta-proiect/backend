@@ -179,47 +179,31 @@ async def get_grupe_prin_materie(
     # ID-urile grupelor inițiale și numele lor scurte pentru cross-check
     ids_set = {int(row.idURL[1:]) for row in ancora_rows if row.idURL and len(row.idURL) > 1}
 
-    # 3. Logica specială pentru CURS (Căutare grupe comasate/specializări diferite)
+    # 3. Logica pentru CURSURI COMASATE (Bazată pe timp și spațiu)
     if tip and "curs" in tip.lower() and ancora_rows:
-        # Pre-încărcăm specializările pentru grupele ancoră ca să știm ce să căutăm în otherInfo
-        specializari_ancora = db.query(Subgrupa.id, Subgrupa.specializationShortName).filter(
-            Subgrupa.id.in_(list(ids_set))
-        ).all()
-        # Map: {id_subgrupa: specializationShortName}
-        map_ancore = {s.id: s.specializationShortName for s in specializari_ancora if s.specializationShortName}
-
         for row in ancora_rows:
-            id_ancora = int(row.idURL[1:])
-            spec_ancora = map_ancore.get(id_ancora)
-            
-            # Căutăm evenimente simultane (același profesor, timp, sală), dar materie diferită
-            potentiale = db.query(Orar).filter(
+            # Căutăm evenimente simultane: același profesor, aceeași sală, același interval orar
+            # Chiar dacă materia are nume ușor diferit (ex: "Matematici Speciale" vs "Analiză")
+            potentiale_comasate = db.query(Orar).filter(
                 Orar.teacherID == profesor.id,
                 Orar.idURL.like('g%'),
                 Orar.weekDay == row.weekDay,
                 Orar.startHour == row.startHour,
                 Orar.duration == row.duration,
                 Orar.roomId == row.roomId,
-                Orar.topicLongName != materie
+                Orar.typeLongName == row.typeLongName, # Tot Curs
+                Orar.topicLongName != materie    # Materie cu nume diferit (sau alias)
             ).all()
 
-            for p in potentiale:
-                id_p = int(p.idURL[1:])
-                # Obținem specializarea grupei potențiale
-                sub_p = db.query(Subgrupa).filter(Subgrupa.id == id_p).first()
-                if not sub_p or not sub_p.specializationShortName:
+            for p in potentiale_comasate:
+                try:
+                    p_id = int(p.idURL[1:])
+                    # Dacă am găsit un alt curs simultan, îl adăugăm automat.
+                    # Coincidența de Sala + Ora + Profesor este dovada de comasare în orar.
+                    if p_id not in ids_set: 
+                        ids_set.add(p_id)
+                except (ValueError, IndexError):
                     continue
-
-                spec_p = sub_p.specializationShortName
-
-                # VALIDARE SIMETRICĂ:
-                # 1. Specializarea ancorei (ex: C) trebuie să fie în notele lui p (otherInfo)
-                # 2. Specializarea lui p (ex: AIA) trebuie să fie în notele ancorei (row.otherInfo)
-                check_A = (p.otherInfo and spec_ancora and spec_ancora in p.otherInfo)
-                check_B = (row.otherInfo and spec_p and spec_p in row.otherInfo)
-
-                if check_A and check_B:
-                    ids_set.add(id_p)
 
     if not ids_set:
         return {
