@@ -178,31 +178,48 @@ async def get_grupe_prin_materie(
     
     # ID-urile grupelor inițiale și numele lor scurte pentru cross-check
     ids_set = {int(row.idURL[1:]) for row in ancora_rows if row.idURL and len(row.idURL) > 1}
-    nume_grupe_initiale = {row.grupa for row in ancora_rows if row.grupa}
 
     # 3. Logica specială pentru CURS (Căutare grupe comasate/specializări diferite)
-    if tip and "curs" in tip.lower():
+    if tip and "curs" in tip.lower() and ancora_rows:
+        # Pre-încărcăm specializările pentru grupele ancoră ca să știm ce să căutăm în otherInfo
+        specializari_ancora = db.query(Subgrupa.id, Subgrupa.specializationShortName).filter(
+            Subgrupa.id.in_(list(ids_set))
+        ).all()
+        # Map: {id_subgrupa: specializationShortName}
+        map_ancore = {s.id: s.specializationShortName for s in specializari_ancora if s.specializationShortName}
+
         for row in ancora_rows:
-            # Căutăm evenimente simultane ale aceluiași profesor, în aceeași sală, dar cu alt nume de materie
-            potentiale_comasate = db.query(Orar).filter(
+            id_ancora = int(row.idURL[1:])
+            spec_ancora = map_ancore.get(id_ancora)
+            
+            # Căutăm evenimente simultane (același profesor, timp, sală), dar materie diferită
+            potentiale = db.query(Orar).filter(
                 Orar.teacherID == profesor.id,
                 Orar.idURL.like('g%'),
                 Orar.weekDay == row.weekDay,
                 Orar.startHour == row.startHour,
                 Orar.duration == row.duration,
                 Orar.roomId == row.roomId,
-                Orar.typeLongName == row.typeLongName,
-                Orar.topicLongName != materie  # Materie cu nume diferit
+                Orar.topicLongName != materie
             ).all()
 
-            for p in potentiale_comasate:
-                # Validare SIMETRICĂ prin otherInfo
-                # A: Grupa găsită (p) trebuie să aibă în otherInfo numele grupei inițiale (row.grupa)
-                # B: Grupa inițială (row) trebuie să aibă în otherInfo numele grupei găsite (p.grupa)
-                # Verificăm dacă există referințe încrucișate în câmpul otherInfo
-                if p.otherInfo and row.grupa and row.grupa in p.otherInfo:
-                    if row.otherInfo and p.grupa and p.grupa in row.otherInfo:
-                        ids_set.add(int(p.idURL[1:]))
+            for p in potentiale:
+                id_p = int(p.idURL[1:])
+                # Obținem specializarea grupei potențiale
+                sub_p = db.query(Subgrupa).filter(Subgrupa.id == id_p).first()
+                if not sub_p or not sub_p.specializationShortName:
+                    continue
+
+                spec_p = sub_p.specializationShortName
+
+                # VALIDARE SIMETRICĂ:
+                # 1. Specializarea ancorei (ex: C) trebuie să fie în notele lui p (otherInfo)
+                # 2. Specializarea lui p (ex: AIA) trebuie să fie în notele ancorei (row.otherInfo)
+                check_A = (p.otherInfo and spec_ancora and spec_ancora in p.otherInfo)
+                check_B = (row.otherInfo and spec_p and spec_p in row.otherInfo)
+
+                if check_A and check_B:
+                    ids_set.add(id_p)
 
     if not ids_set:
         return {
@@ -210,7 +227,8 @@ async def get_grupe_prin_materie(
             "lastName": profesor.lastName,
             "firstName": profesor.firstName,
             "materie": materie,
-            "grupe": []
+            "grupe": [],
+            "tip_selectat": tip,
         }
 
     # 4. Obținem detaliile complete pentru toate ID-urile colectate
