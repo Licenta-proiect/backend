@@ -87,27 +87,52 @@ def valideaza_configuratie_grupe(id_grupe: List[int], tip_activitate: str):
 
 def verifica_existenta_materie(db: Session, id_profesor: int, id_grupe: List[int], materie: str, tip_materie: str) -> bool:
     """
-    Verifică dacă materia și tipul de activitate există în orarul profesorului 
-    și al tuturor grupelor selectate.
-    Profesorul trebuie să predea la grupa respectivă.
-    
-    Returnează True doar dacă fiecare entitate (profesor + fiecare grupă) 
-    are cel puțin o înregistrare pentru materia respectivă.
+    Verifică existența materiei în orar.
+    - Pentru CURS: Verifică dacă materia există la profesor, iar grupele au acest profesor 
+      la acest tip de activitate (permite variații de nume între specializări).
+    - Pentru ALTEL (Lab/Sem): Verifică potrivirea strictă profesor-materie-grupă.
     """
-    # Construim lista de identificatori (tag-uri) folosiți în coloana idURL
-    target_tags = [f"p{id_profesor}"] + [f"g{gid}" for gid in id_grupe]
+    tip_lower = tip_materie.lower()
     
-    # Numărăm entitățile distincte din lista noastră care apar în orar cu această materie
-    existent_entities_count = db.query(func.count(distinct(Orar.idURL))).filter(
-        Orar.idURL.in_(target_tags),
+    # 1. Validare inițială: Materia trebuie să existe obligatoriu în orarul profesorului
+    prof_record = db.query(Orar).filter(
+        Orar.idURL == f"p{id_profesor}",
         Orar.teacherID == id_profesor,
         func.lower(Orar.topicLongName) == func.lower(materie),
         func.lower(Orar.typeLongName) == func.lower(tip_materie)
-    ).scalar()
-    
-    # Verificăm dacă numărul de entități găsite coincide cu numărul de entități căutate
-    # Acest lucru garantează că profesorul predă materia și TOATE grupele o au în program
-    return existent_entities_count == len(target_tags)
+    ).first()
+
+    if not prof_record:
+        return False
+
+    # 2. Validare pentru fiecare grupă
+    for gid in id_grupe:
+        tag_grupa = f"g{gid}"
+        
+        if "curs" in tip_lower:
+            # LOGICĂ CURS: Verificăm dacă profesorul predă cursul la această grupă, 
+            # indiferent dacă numele materiei diferă puțin (ex: "Mate 1" vs "Mate")
+            grupa_has_prof = db.query(Orar).filter(
+                Orar.idURL == tag_grupa,
+                Orar.teacherID == id_profesor,
+                func.lower(Orar.typeLongName) == tip_lower
+            ).first()
+            
+            if not grupa_has_prof:
+                return False
+        else:
+            # LOGICĂ STRICTĂ (Lab/Sem/Proiect): Materia și profesorul trebuie să coincidă exact
+            grupa_has_exact_topic = db.query(Orar).filter(
+                Orar.idURL == tag_grupa,
+                Orar.teacherID == id_profesor,
+                func.lower(Orar.topicLongName) == func.lower(materie),
+                func.lower(Orar.typeLongName) == tip_lower
+            ).first()
+            
+            if not grupa_has_exact_topic:
+                return False
+
+    return True
 
 def get_data(db: Session, req: SlotLiberRequest, current_semester: int):
     '''Extrage datele din orar ȘI rezervări pentru profesor, subgrupe și săli'''
