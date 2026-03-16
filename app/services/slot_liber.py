@@ -395,7 +395,7 @@ if __name__ == "__main__":
 
     # 1. Simulăm obiectul Request
     test_req = SlotLiberRequest(
-        email="stoicaalexandra180@gmail.com",
+        email="adina@eed.usv.ro",
         materie="Criptografie şi securitate informaţională",
         grupe_ids=[49, 50, 51],
         sali_ids=[66, 24, 30],
@@ -455,12 +455,13 @@ if __name__ == "__main__":
                 if not ui_report:
                     print("📭 Nu s-au găsit sloturi libere.")
                 else:
-                    for week, days in ui_report.items():
+                    for week, days_list in ui_report.items():
                         print(f"\n--- 📦 CARD SAPTAMANA {week} ---")
-                        for day_name, rooms in days.items():
-                            print(f"  📍 {day_name}:")
-                            for r in rooms:
-                                print(f"    🏢 Sala {r['sala']} | 🕒 Ore start: {r['ore_posibile']}")
+                        # days_list este acum o LISTA de dictionare, nu un dictionar
+                        for day_info in days_list:
+                            print(f"  📍 {day_info['zi_nume']} ({day_info['data']}):")
+                            for opt in day_info['optiuni']:
+                                print(f"    🏢 Sala ID: {opt['sala_id']} | 🕒 Interval: {opt['ora_start']}:00 - {opt['ora_final']}:00")
 
         print(f"\n⏱️ Timp execuție: {time.time()-start_time:.2f}s")
     finally:
