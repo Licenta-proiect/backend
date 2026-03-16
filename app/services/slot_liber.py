@@ -39,9 +39,7 @@ def get_profesor_id(db: Session, email: str):
 def get_max_week_for_groups(db: Session, id_grupe: List[int], current_semester: int) -> int:
     """
     Determină săptămâna maximă (10 sau 14).
-    Anii terminali au:
-    - 14 săptămâni în Semestrul 1
-    - 10 săptămâni în Semestrul 2
+    Întoarce 10 doar dacă TOATE grupele selectate sunt în an terminal în Semestrul 2.
     """
     # Dacă suntem în Semestrul 1, oricum toată lumea are 14 săptămâni
     if current_semester == 1:
@@ -51,7 +49,9 @@ def get_max_week_for_groups(db: Session, id_grupe: List[int], current_semester: 
     if not grupe:
         return 14
 
-    is_terminal = False
+    # Presupunem că toate sunt terminale până la proba contrarie
+    all_terminal = True
+    
     for g in grupe:
         # Căutăm care este anul maxim pentru specializarea acestei grupe
         max_year = db.query(func.max(Subgrupa.studyYear)).filter(
@@ -59,12 +59,12 @@ def get_max_week_for_groups(db: Session, id_grupe: List[int], current_semester: 
             Subgrupa.faculty_id == g.faculty_id
         ).scalar()
         
-        # Dacă grupa curentă este în anul maxim, e an terminal
-        if g.studyYear == max_year:
-            is_terminal = True
-            break # E suficient ca o grupă să fie terminală pentru a limita căutarea
+        # Dacă găsim O SINGURĂ grupă care NU este în anul maxim
+        if g.studyYear != max_year:
+            all_terminal = False
+            break # Nu mai are sens să verificăm restul, limita va fi 14
             
-    return 10 if is_terminal else 14
+    return 10 if all_terminal else 14
 
 def valideaza_configuratie_grupe(id_grupe: List[int], tip_activitate: str):
     """
