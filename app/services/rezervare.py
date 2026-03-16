@@ -198,7 +198,7 @@ def get_teacher_reservations(db: Session, email: str):
                 if current_time_minutes > ora_final:
                     status_final = "efectuată"
 
-        nume_grupe = [f"{g.specializationShortName} {g.groupName}{g.subgroupIndex}" for g in r.grupe]
+        nume_grupe = [f"{g.specializationShortName} an {g.studyYear} {g.groupName}{g.subgroupIndex}" for g in r.grupe]
 
         result.append({
             "id": r.id,
@@ -243,7 +243,7 @@ def get_all_reservations_admin(db: Session):
                     status_final = "efectuată"
 
         # Formatare nume grupe
-        nume_grupe = [f"{g.specializationShortName} {g.groupName}{g.subgroupIndex}" for g in r.grupe]
+        nume_grupe = [f"{g.specializationShortName} an {g.studyYear} {g.groupName}{g.subgroupIndex}" for g in r.grupe]
 
         nume_profesor = "N/A"
         email_profesor = "N/A"
@@ -300,7 +300,7 @@ def get_reservations_by_subgroups(db: Session):
         nume_profesor = f"{r.profesor_titular.lastName} {r.profesor_titular.firstName}" if r.profesor_titular else "N/A"
         
         # Numele tuturor grupelor care participă la această rezervare
-        nume_grupe_display = [f"{g.specializationShortName} {g.groupName}{g.subgroupIndex}" for g in r.grupe]
+        nume_grupe_display = [f"{g.specializationShortName} an {g.studyYear} {g.groupName}{g.subgroupIndex}" for g in r.grupe]
 
         rezervare_data = {
             "id": r.id,
