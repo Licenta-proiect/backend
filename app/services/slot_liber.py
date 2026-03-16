@@ -39,9 +39,9 @@ def get_profesor_id(db: Session, email: str):
 def get_max_week_for_groups(db: Session, id_grupe: List[int], current_semester: int) -> int:
     """
     Determină săptămâna maximă (10 sau 14).
-    Întoarce 10 doar dacă TOATE grupele selectate sunt în an terminal în Semestrul 2.
-    Un an este terminal dacă studyYear == max_year (3 sau 4) și type == 1 (Licență) 
-    sau studyYear == 2 și type == 2 (Master).
+    Anii terminali au:
+    - 14 săptămâni în Semestrul 1
+    - 10 săptămâni în Semestrul 2
     """
     # Dacă suntem în Semestrul 1, oricum toată lumea are 14 săptămâni
     if current_semester == 1:
@@ -51,35 +51,20 @@ def get_max_week_for_groups(db: Session, id_grupe: List[int], current_semester: 
     if not grupe:
         return 14
 
-    all_terminal = True
-    
+    is_terminal = False
     for g in grupe:
-        # 1. Determinăm anul maxim teoretic pentru specializarea respectivă din baza de date
-        max_year_db = db.query(func.max(Subgrupa.studyYear)).filter(
+        # Căutăm care este anul maxim pentru specializarea acestei grupe
+        max_year = db.query(func.max(Subgrupa.studyYear)).filter(
             Subgrupa.specializationShortName == g.specializationShortName,
             Subgrupa.faculty_id == g.faculty_id
         ).scalar()
-
-        is_this_group_terminal = False
-
-        # 2. Verificare Licență (type == 1)
-        # Trebuie să fie anul 3 sau 4 ȘI să fie ultimul an disponibil pentru acea specializare
-        if g.type == 1:
-            if g.studyYear in [3, 4] and g.studyYear == max_year_db:
-                is_this_group_terminal = True
         
-        # 3. Verificare Master (type == 2)
-        # Trebuie să fie anul 2
-        elif g.type == 2:
-            if g.studyYear == 2:
-                is_this_group_terminal = True
-
-        # Dacă găsim O SINGURĂ grupă care NU este terminală conform regulilor de mai sus
-        if not is_this_group_terminal:
-            all_terminal = False
-            break 
+        # Dacă grupa curentă este în anul maxim, e an terminal
+        if g.studyYear == max_year:
+            is_terminal = True
+            break # E suficient ca o grupă să fie terminală pentru a limita căutarea
             
-    return 10 if all_terminal else 14
+    return 10 if is_terminal else 14
 
 def valideaza_configuratie_grupe(id_grupe: List[int], tip_activitate: str):
     """
