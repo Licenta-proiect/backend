@@ -38,10 +38,9 @@ def get_profesor_id(db: Session, email: str):
 
 def get_max_week_for_groups(db: Session, id_grupe: List[int], current_semester: int) -> int:
     """
-    Determină săptămâna maximă (10 sau 14).
-    Anii terminali au:
-    - 14 săptămâni în Semestrul 1
-    - 10 săptămâni în Semestrul 2
+    Determină săptămâna maximă (10 sau 14) în funcție de grupele selectate.
+    - Întoarce 10 dacă TOATE grupele selectate sunt în an terminal în Semestrul 2.
+    - Pentru Licență (type 1), anul terminal trebuie să fie cel puțin 3.
     """
     # Dacă suntem în Semestrul 1, oricum toată lumea are 14 săptămâni
     if current_semester == 1:
@@ -51,20 +50,35 @@ def get_max_week_for_groups(db: Session, id_grupe: List[int], current_semester: 
     if not grupe:
         return 14
 
-    is_terminal = False
+    # Presupunem inițial că toate sunt terminale și căutăm contra-exemple
+    all_terminal = True
+    
     for g in grupe:
-        # Căutăm care este anul maxim pentru specializarea acestei grupe
+        is_this_group_terminal = False
+
+        # Căutăm anul maxim pentru specializarea acestei grupe (și același tip)
         max_year = db.query(func.max(Subgrupa.studyYear)).filter(
             Subgrupa.specializationShortName == g.specializationShortName,
-            Subgrupa.faculty_id == g.faculty_id
+            Subgrupa.faculty_id == g.faculty_id,
+            Subgrupa.type == g.type
         ).scalar()
+
+        # Verificare Licență (type 1): An terminal (max_year) dar minim anul 3
+        if g.type == 1:
+            if g.studyYear == max_year and g.studyYear >= 3:
+                is_this_group_terminal = True
         
-        # Dacă grupa curentă este în anul maxim, e an terminal
-        if g.studyYear == max_year:
-            is_terminal = True
-            break # E suficient ca o grupă să fie terminală pentru a limita căutarea
+        # Verificare Master sau alte tipuri: Doar să fie anul maxim
+        else:
+            if g.studyYear == max_year:
+                is_this_group_terminal = True
+
+        # Dacă am găsit o singură grupă care NU este terminală, invalidăm tot grupul
+        if not is_this_group_terminal:
+            all_terminal = False
+            break 
             
-    return 10 if is_terminal else 14
+    return 10 if all_terminal else 14
 
 def valideaza_configuratie_grupe(id_grupe: List[int], tip_activitate: str):
     """
