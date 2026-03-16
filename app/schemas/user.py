@@ -110,3 +110,6 @@ class AnulareRezervareRequest(BaseModel):
     rezervare_id: int
     email: str
     motiv: Optional[str] = "Nespecificat"
+
+class WeeksRequest(BaseModel):
+    grupe_ids: List[int]

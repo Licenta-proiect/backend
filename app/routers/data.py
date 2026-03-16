@@ -1,11 +1,12 @@
 # app\routers\data.py
 from typing import List
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.models import Subgrupa, Profesor, Sala, Orar
+from app.schemas.user import WeeksRequest
 from app.services.future_weeks import get_future_weeks_logic
 from app.services.slot_liber import get_max_week_for_groups
 
@@ -96,11 +97,13 @@ async def get_future_weeks(db: Session = Depends(get_db)):
         "current_status": current_status
     }
 
-@router.get("/weeks-valide")
-async def get_valid_weeks(grupe_ids: List[int] = Query(...), db: Session = Depends(get_db)):
+@router.post("/weeks-valide")
+async def get_valid_weeks(req: WeeksRequest, db: Session = Depends(get_db)):
     '''
     Returnează săptămânile valide pentru grupe, ținând cont de anul de studiu.
     '''
+    # Extragem lista din obiectul JSON primit
+    grupe_ids = req.grupe_ids
     
     # Determinăm semestrul și săptămânile de curs generale din calendar
     current_semester, active_weeks, _, _ = get_future_weeks_logic(db)
