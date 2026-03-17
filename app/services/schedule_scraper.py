@@ -1,4 +1,4 @@
-# app\services\scraper_orar.py
+# app\services\schedule_scraper.py
 import random
 import httpx
 import asyncio

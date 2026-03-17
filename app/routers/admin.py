@@ -11,7 +11,7 @@ from app.models.models import User, UserRole, Profesor, IstoricSincronizare, Cer
 from app.services.rezervare import get_all_reservations_admin
 from app.services.scraper import populate as populate_base
 from app.services.calendar_scraper import run as populate_calendar
-from app.services.scraper_orar import populate as populate_orar
+from app.services.schedule_scraper import populate as populate_orar
 from app.schemas.user import UserCreate, UserResponse, UserUpdate, SyncHistoryResponse
 from app.services.sync_logger import run_sync_with_logging
 from app.services.backup import execute_db_backup
