@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from app.db.session import get_db
 from app.schemas.sync import SyncSettingsUpdate
 from app.services.auth import get_current_user
-from app.models.models import User, UserRole, Profesor, IstoricSincronizare, CerereEmailProfesor, SistemStatus
+from app.models.models import User, UserRole, Professor, SyncHistory, ProfessorEmailRequest, SystemStatus
 from app.services.reservation import get_all_reservations_admin
 from app.services.scraper import populate as populate_base
 from app.services.calendar_scraper import run as populate_calendar
@@ -19,22 +19,22 @@ from app.services.backup import execute_db_backup
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 def check_admin(user: User):
-    """Verifică dacă utilizatorul are rol de administrator."""
+    """Verifies if the user has an administrator role."""
     if user.role != UserRole.ADMIN.value:
-        raise HTTPException(status_code=403, detail="Acces interzis. Necesar Admin.")
+        raise HTTPException(status_code=403, detail="Access denied. Admin role required.")
 
-async def sync_baza_si_orar_logic():
-    """Execută secvențial baza și apoi orarul"""
+async def sync_base_and_schedule_logic():
+    """Executes base data population followed by schedule population sequentially."""
     await populate_base()
     await populate_orar()
 
-# --- RUTE MANAGEMENT USERI ---
+# --- USER MANAGEMENT ROUTES ---
 @router.get("/users", response_model=List[UserResponse])
 async def get_all_users(
     db: Session = Depends(get_db), 
     admin_user: User = Depends(get_current_user)
 ):
-    """Selectează toți utilizatorii din baza de date."""
+    """Retrieves all users from the database."""
     check_admin(admin_user)
     users = db.query(User).all() 
     return users
@@ -45,33 +45,32 @@ async def create_user(
     db: Session = Depends(get_db), 
     admin_user: User = Depends(get_current_user)
 ):
-    """Creează un utilizator nou și îl leagă de tabela profesori dacă este cazul."""
+    """Creates a new user and links them to the professors table if applicable."""
     check_admin(admin_user)
     
-    # 1. Verificăm dacă user-ul există deja în tabela users
+    # 1. Check if the user already exists in the users table
     existing_user = db.query(User).filter(User.email == user_in.email).first() 
     if existing_user:
         raise HTTPException(status_code=400, detail="Email deja înregistrat.")
     
-    # 2. Inițializăm noul utilizator
+    # 2. Initialize new user
     new_user = User(
-        lastName=user_in.lastName,
-        firstName=user_in.firstName,
+        last_name=user_in.last_name,
+        first_name=user_in.first_name,
         email=user_in.email,
         role=user_in.role.value
     ) 
     
-    # 3. Dacă rolul este PROFESOR, căutăm corespondența în tabela profesori
-    if user_in.role.value == UserRole.PROFESOR.value:
-        # Căutăm profesorul după email
-        profesor = db.query(Profesor).filter(Profesor.emailAddress == user_in.email).first()
+    # 3. If the role is PROFESSOR, look for a match in the professors table
+    if user_in.role.value == UserRole.PROFESSOR.value:
+        # Search for professor by email
+        professor = db.query(Professor).filter(Professor.email_address == user_in.email).first()
         
-        if profesor:
-            # Facem legătura prin ID
-            new_user.teacher_id = profesor.id
+        if professor:
+            # Link via ID
+            new_user.teacher_id = professor.id
         else:
-            # Opțional: Poți decide dacă permiți crearea fără legătură sau arunci eroare
-            # Dacă profesorul nu e în baza de date a orarului, poate ar trebui să refuzi
+            # If the professor is not in the schedule database, we refuse creation
             raise HTTPException(
                 status_code=404, 
                 detail="Acest email nu a fost găsit în lista oficială de profesori (orar)."
@@ -80,11 +79,11 @@ async def create_user(
     db.add(new_user) 
     try:
         db.commit() 
-    except Exception as e:
+    except Exception:
         db.rollback()
         raise HTTPException(status_code=500, detail="Eroare la salvarea în baza de date.")
 
-    return {"message": f"Utilizatorul {user_in.firstName} {user_in.lastName} a fost creat cu succes sub rolul de {user_in.role.value}."}
+    return {"message": f"Utilizatorul {user_in.first_name} {user_in.last_name} a fost creat cu succes sub rolul de {user_in.role.value}."}
 
 @router.delete("/users/delete/{email}")
 async def delete_user(
@@ -92,21 +91,21 @@ async def delete_user(
     db: Session = Depends(get_db), 
     admin_user: User = Depends(get_current_user)
 ):
-    """Șterge un utilizator după adresa de email, cu protecție pentru admin-ul principal."""
+    """Deletes a user by email, with protection for the main administrator."""
     check_admin(admin_user)
     
     user_to_delete = db.query(User).filter(User.email == email).first() 
     if not user_to_delete:
         raise HTTPException(status_code=404, detail="Utilizatorul nu a fost găsit.")
     
-    # Verificăm dacă user-ul vizat este admin-ul principal (ID 1)
+    # Check if the target user is the main admin (ID 1)
     if user_to_delete.id == 1:
         raise HTTPException(
             status_code=403, 
             detail="Administratorul principal al sistemului nu poate fi șters."
         )
     
-    # Împiedicăm un admin să se șteargă singur
+    # Prevent an admin from deleting themselves
     if user_to_delete.id == admin_user.id:
         raise HTTPException(
             status_code=400, 
@@ -125,54 +124,52 @@ async def update_user(
     admin_user: User = Depends(get_current_user)
 ):
     """
-    Actualizează datele utilizatorului cu protecție pentru admin-ul principal și auto-modificare.
+    Updates user data with protection for the main admin and self-modification.
     """
     check_admin(admin_user)
     
-    # Căutăm utilizatorul după email-ul actual
+    # Search for user by current email
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="Utilizatorul nu a fost găsit.")
     
-    # --- LOGICA DE PROTECȚIE (Aceeași ca la DELETE) ---
+    # --- PROTECTION LOGIC ---
     
-    # Verificăm dacă se încearcă modificarea email-ului
+    # Check if email modification is attempted
     if update_data.new_email is not None and update_data.new_email != email:
         
-        # 1. Protecție Admin Principal (ID 1)
+        # 1. Main Admin Protection (ID 1)
         if user.id == 1:
             raise HTTPException(
                 status_code=403, 
                 detail="Email-ul administratorului principal nu poate fi modificat din motive de securitate."
             )
         
-        # 2. Protecție Auto-Modificare
+        # 2. Self-Modification Protection
         if user.id == admin_user.id:
             raise HTTPException(
                 status_code=400, 
                 detail="Nu îți poți modifica propriul email din această interfață (ar duce la deconectare imediată)."
             )
 
-    # --- FINAL LOGICĂ PROTECȚIE ---
-
-    # 1. Actualizare nume/prenume (acestea pot fi modificate fără restricții de securitate)
+    # 1. Update name/surname
     if update_data.last_name is not None:
-        user.lastName = update_data.last_name 
+        user.last_name = update_data.last_name 
     if update_data.first_name is not None:
-        user.firstName = update_data.first_name
+        user.first_name = update_data.first_name
 
-    # 2. Actualizare Email cu Sincronizare Manuală
+    # 2. Update Email with Manual Sync
     if update_data.new_email is not None and update_data.new_email != email:
-        # Verificăm dacă noul email este deja folosit de altcineva
+        # Check if the new email is already used by someone else
         email_taken = db.query(User).filter(User.email == update_data.new_email).first()
         if email_taken:
             raise HTTPException(status_code=400, detail="Noul email este deja înregistrat.")
         
-        # Sincronizare manuală în tabela Profesori
-        if user.profesor_info:
-            user.profesor_info.emailAddress = update_data.new_email
+        # Manual sync in the Professors table
+        if user.professor_info:
+            user.professor_info.email_address = update_data.new_email
         
-        # Actualizăm email-ul principal
+        # Update the primary email
         user.email = update_data.new_email
 
     try:
@@ -184,27 +181,27 @@ async def update_user(
 
     return user
 
-# --- RUTE MANAGEMENT CERERI ACCES PROFESORI --- 
+# --- PROFESSOR ACCESS REQUEST MANAGEMENT --- 
 
 @router.get("/requests")
 async def get_professor_requests(
-    status: Optional[str] = None, # Parametru pentru filtrare (pending, approved, rejected)
+    status: Optional[str] = None, # Filtering parameter (pending, approved, rejected)
     db: Session = Depends(get_db), 
     admin_user: User = Depends(get_current_user)
 ):
     """
-    Returnează cererile de acces. 
-    Dacă status nu este furnizat, le returnează pe toate (pentru istoric).
+    Returns access requests. 
+    If status is not provided, returns all (for history).
     """
     check_admin(admin_user)
     
-    query = db.query(CerereEmailProfesor)
+    query = db.query(ProfessorEmailRequest)
     
     if status:
-        query = query.filter(CerereEmailProfesor.status == status)
+        query = query.filter(ProfessorEmailRequest.status == status)
     
-    # Ordonăm după data cererii (cele mai noi primele)
-    requests = query.order_by(CerereEmailProfesor.data_cerere.desc()).all()
+    # Order by request date (newest first)
+    requests = query.order_by(ProfessorEmailRequest.request_date.desc()).all()
     return requests
 
 @router.post("/requests/approve/{request_id}")
@@ -214,66 +211,63 @@ async def approve_professor_request(
     admin_user: User = Depends(get_current_user)
 ):
     """
-    Aprobă o cerere de acces.
-    Caută profesorul cu același nume/prenume care are email-ul NULL și îl actualizează.
-    Dacă validarea eșuează (profesor negăsit sau email duplicat), cererea este marcată automat ca rejected.
+    Approves an access request.
+    Finds the professor with the same name who has a NULL email and updates it.
+    If validation fails, the request is automatically marked as rejected.
     """
     check_admin(admin_user)
 
-    # 1. Găsim cererea
-    cerere = db.query(CerereEmailProfesor).filter(CerereEmailProfesor.id == request_id).first()
-    if not cerere:
+    # 1. Find the request
+    request_obj = db.query(ProfessorEmailRequest).filter(ProfessorEmailRequest.id == request_id).first()
+    if not request_obj:
         raise HTTPException(status_code=404, detail="Cererea nu a fost găsită.")
     
-    if cerere.status != "pending":
+    if request_obj.status != "pending":
         raise HTTPException(status_code=400, detail="Cererea a fost deja procesată.")
 
-    # 2. Căutăm profesorul corespunzător
-    profesor = db.query(Profesor).filter(
-        func.lower(Profesor.lastName) == func.lower(cerere.lastName),
-        func.lower(Profesor.firstName) == func.lower(cerere.firstName),
-        Profesor.emailAddress == None
+    # 2. Search for the corresponding professor
+    professor = db.query(Professor).filter(
+        func.lower(Professor.last_name) == func.lower(request_obj.last_name),
+        func.lower(Professor.first_name) == func.lower(request_obj.first_name),
+        Professor.email_address == None
     ).first()
 
-    if not profesor:
-        # LOGICA NOUĂ: Marcăm ca respinsă pentru că datele sunt invalide (nu există profesorul)
-        cerere.status = "rejected"
-        cerere.data_solutionare = datetime.now(timezone.utc)
+    if not professor:
+        request_obj.status = "rejected"
+        request_obj.resolution_date = datetime.now(timezone.utc)
         db.commit()
         raise HTTPException(
-            status_code=404, 
+            status_code=404,
             detail="Nu s-a găsit niciun profesor potrivit fără email. Cererea a fost respinsă automat."
         )
 
-    # 3. Validăm dacă email-ul din cerere nu este deja folosit
-    existing_email = db.query(Profesor).filter(Profesor.emailAddress == cerere.email).first()
+    # 3. Validate if the email in the request is already in use
+    existing_email = db.query(Professor).filter(Professor.email_address == request_obj.email).first()
     if existing_email:
-        # Marcăm ca respinsă pentru că email-ul este deja ocupat
-        cerere.status = "rejected"
-        cerere.data_solutionare = datetime.now(timezone.utc)
+        request_obj.status = "rejected"
+        request_obj.resolution_date = datetime.now(timezone.utc)
         db.commit()
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="Email-ul este deja atribuit altui profesor. Cererea a fost respinsă automat."
         )
 
     try:
-        # 4. Actualizăm email-ul profesorului
-        profesor.emailAddress = cerere.email
+        # 4. Update professor email
+        professor.email_address = request_obj.email
 
-        # 5. Finalizăm cererea cu succes
-        cerere.status = "approved"
-        cerere.data_solutionare = datetime.now(timezone.utc)
+        # 5. Finalize the request with success
+        request_obj.status = "approved"
+        request_obj.resolution_date = datetime.now(timezone.utc)
 
         db.commit()
-        return {"message": f"Cerere aprobată pentru {profesor.lastName}."}
+        return {"message": f"Cerere aprobată pentru {professor.last_name}."}
     
     except Exception as e:
         db.rollback()
-        # În caz de eroare neprevăzută la baza de date, încercăm totuși să marcăm cererea ca eșuată
         try:
-            cerere.status = "rejected"
-            cerere.data_solutionare = datetime.now(timezone.utc)
+            request_obj.status = "rejected"
+            request_obj.resolution_date = datetime.now(timezone.utc)
             db.commit()
         except:
             pass
@@ -285,47 +279,41 @@ async def reject_professor_request(
     db: Session = Depends(get_db),
     admin_user: User = Depends(get_current_user)
 ):
-    """Respinge o cerere de acces cu gestionare de erori."""
+    """Rejects an access request."""
     check_admin(admin_user)
     
-    # 1. Căutăm cererea
-    cerere = db.query(CerereEmailProfesor).filter(CerereEmailProfesor.id == request_id).first()
+    request_obj = db.query(ProfessorEmailRequest).filter(ProfessorEmailRequest.id == request_id).first()
     
-    if not cerere:
+    if not request_obj:
         raise HTTPException(status_code=404, detail="Cererea nu a fost găsită.")
     
-    # 2. Verificăm dacă nu cumva este deja procesată
-    if cerere.status != "pending":
+    if request_obj.status != "pending":
         raise HTTPException(
             status_code=400, 
-            detail=f"Cererea are deja statusul: {cerere.status}."
+            detail=f"Cererea are deja statusul: {request_obj.status}."
         )
 
     try:
-        # 3. Marcăm ca respinsă
-        cerere.status = "rejected"
-        cerere.data_solutionare = datetime.now(timezone.utc)
+        request_obj.status = "rejected"
+        request_obj.resolution_date = datetime.now(timezone.utc)
         
         db.commit()
         return {"message": "Cererea a fost respinsă cu succes."}
         
     except Exception as e:
         db.rollback()
-        # Aici forțăm o ultimă încercare de a marca statusul dacă eroarea a fost de altă natură
         try:
-            cerere.status = "rejected"
+            request_obj.status = "rejected"
             db.commit()
         except:
             pass
         raise HTTPException(status_code=500, detail=f"Eroare la respingerea cererii: {str(e)}")
 
-# --- RUTE SINCRONIZARE ORAR ---
+# --- SCHEDULE SYNC ROUTES ---
 
 @router.post("/sync/base")
 async def sync_base_data(bg: BackgroundTasks, user: User = Depends(get_current_user)):
     check_admin(user)
-
-    # Rulăm wrapper-ul care se ocupă de logare și execuția populate_base
     bg.add_task(run_sync_with_logging, populate_base, "Base")
     return {"message": "Sincronizare date de bază pornită."}
 
@@ -333,7 +321,7 @@ async def sync_base_data(bg: BackgroundTasks, user: User = Depends(get_current_u
 async def sync_calendar(bg: BackgroundTasks, user: User = Depends(get_current_user)):
     check_admin(user)
 
-    print("📦 Inițiem backup preventiv...")
+    print("Initiating preventive backup...")
     backup_file = execute_db_backup()
     if not backup_file:
          raise HTTPException(status_code=500, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
@@ -345,29 +333,27 @@ async def sync_calendar(bg: BackgroundTasks, user: User = Depends(get_current_us
 async def sync_orar(bg: BackgroundTasks, user: User = Depends(get_current_user)):
     check_admin(user)
 
-    print("📦 Inițiem backup preventiv...")
+    print("Initiating preventive backup...")
     backup_file = execute_db_backup()
     if not backup_file:
          raise HTTPException(status_code=500, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
 
-    bg.add_task(run_sync_with_logging, populate_orar, "Orar")
+    bg.add_task(run_sync_with_logging, populate_orar, "Schedule")
     return {"message": "Sincronizare orar pornită."}
 
 @router.post("/sync/baza-orar")
 async def sync_full_db_orar(bg: BackgroundTasks, user: User = Depends(get_current_user)):
     """
-    Rută combinată care sincronizează datele de bază (Facultăți, Profesori, Săli)
-    urmate imediat de Orar.
+    Combined route that syncs base data followed immediately by the Schedule.
     """
     check_admin(user)
 
-    print("📦 Inițiem backup preventiv...")
+    print("Initiating preventive backup...")
     backup_file = execute_db_backup()
     if not backup_file:
          raise HTTPException(status_code=500, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
 
-    # Apelăm wrapper-ul cu funcția care le execută pe ambele
-    bg.add_task(run_sync_with_logging, sync_baza_si_orar_logic, "Baza + Orar")
+    bg.add_task(run_sync_with_logging, sync_base_and_schedule_logic, "Base + Schedule")
     return {"message": "Sincronizarea combinată (Bază + Orar) a pornit în fundal."}
 
 @router.get("/sync/history", response_model=List[SyncHistoryResponse])
@@ -376,24 +362,21 @@ async def get_sync_history(
     admin_user: User = Depends(get_current_user)
 ):
     """
-    Returnează istoricul complet al sincronizărilor efectuate.
-    Accesibil doar administratorilor.
+    Returns the complete synchronization history.
+    Accessible only to administrators.
     """
     check_admin(admin_user)
     
-    # Preluăm istoricul ordonat după cele mai recente sincronizări
-    history = db.query(IstoricSincronizare).order_by(IstoricSincronizare.data_start.desc()).all()
+    history = db.query(SyncHistory).order_by(SyncHistory.start_date.desc()).all()
     
     return history
 
 @router.get("/sync/settings")
 async def get_sync_settings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    '''Returnează configurația actuală pentru sincronizarea automată'''
-    
+    """Returns the current configuration for automatic synchronization."""
     check_admin(user)
-    status = db.query(SistemStatus).first()
-    
-    return status
+    status_obj = db.query(SystemStatus).first()
+    return status_obj
 
 @router.post("/sync/settings")
 async def update_sync_settings(
@@ -401,28 +384,26 @@ async def update_sync_settings(
     db: Session = Depends(get_db), 
     user: User = Depends(get_current_user)
 ):
-    '''Actualizează modul în care sistemul execută sincronizările automate.'''
-    
+    """Updates how the system executes automatic synchronizations."""
     check_admin(user)
-    status = db.query(SistemStatus).first()
+    status_obj = db.query(SystemStatus).first()
     
-    if not status:
-        status = SistemStatus()
-        db.add(status)
+    if not status_obj:
+        status_obj = SystemStatus()
+        db.add(status_obj)
     
-    # Actualizăm câmpurile folosind datele validate de Pydantic
-    status.auto_sync_enabled = settings.auto_sync_enabled
-    status.sync_interval = settings.sync_interval
-    status.sync_time = settings.sync_time
+    status_obj.auto_sync_enabled = settings.auto_sync_enabled
+    status_obj.sync_interval = settings.sync_interval
+    status_obj.sync_time = settings.sync_time
     
     db.commit()
     return {"message": "Setări de sincronizare actualizate cu succes."}
 
-# --- RUTE REZERVARI ---
+# --- RESERVATION ROUTES ---
 
-@router.get("/rezervari")
-def get_all_rezervari(db: Session = Depends(get_db)):
+@router.get("/reservations")
+def get_all_reservations(db: Session = Depends(get_db)):
     """
-    Ruta pentru admin care returnează istoricul global al tuturor rezervărilor.
+    Admin route that returns the global history of all reservations.
     """
     return get_all_reservations_admin(db)
