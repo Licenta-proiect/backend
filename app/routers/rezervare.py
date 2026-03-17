@@ -5,7 +5,7 @@ from app.db.session import get_db
 from app.schemas.user import RezervareSlotRequest, SlotLiberRequest, AnulareRezervareRequest
 from app.models.models import User
 from app.services.auth import get_current_user
-from app.services.rezervare import create_slot_reservation, cancel_reservation
+from app.services.reservation import create_slot_reservation, cancel_reservation
 from app.services.slot_liber import get_data, find_free_slots_cp_sat, group_slots_for_ui
 from app.services.future_weeks import get_future_weeks_logic
 

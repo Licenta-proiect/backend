@@ -8,7 +8,7 @@ from app.db.session import get_db
 from app.schemas.sync import SyncSettingsUpdate
 from app.services.auth import get_current_user
 from app.models.models import User, UserRole, Profesor, IstoricSincronizare, CerereEmailProfesor, SistemStatus
-from app.services.rezervare import get_all_reservations_admin
+from app.services.reservation import get_all_reservations_admin
 from app.services.scraper import populate as populate_base
 from app.services.calendar_scraper import run as populate_calendar
 from app.services.schedule_scraper import populate as populate_orar

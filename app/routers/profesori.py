@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.models import Profesor, Orar, Subgrupa, Sala, User
 from app.services.auth import get_current_user
-from app.services.rezervare import get_teacher_reservations
+from app.services.reservation import get_teacher_reservations
 
 # Inițializezi router-ul
 router = APIRouter(prefix="/profesor", tags=["Profesori"])
