@@ -1,93 +1,92 @@
 # app\routers\data.py
 from typing import List
-
 from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.models.models import Subgrupa, Profesor, Sala, Orar
+from app.models.models import Subgroup, Professor, Room, Schedule
 from app.schemas.user import WeeksRequest
 from app.services.future_weeks import get_future_weeks_logic
 from app.services.slot_liber import get_max_week_for_groups
 
 router = APIRouter(prefix="/data", tags=["Data"])
 
-@router.get("/profesori")
-async def get_active_profesori(db: Session = Depends(get_db)):
+@router.get("/professors")
+async def get_active_professors(db: Session = Depends(get_db)):
     """
-    Returnează profesorii care au orarul descărcat (has_schedule=True).
+    Returns professors who have their schedule downloaded (has_schedule=True).
     """
-    profesori = db.query(Profesor).filter(
-        Profesor.has_schedule == True
-    ).order_by(Profesor.lastName.asc(), Profesor.firstName.asc()).all()
+    professors = db.query(Professor).filter(
+        Professor.has_schedule == True
+    ).order_by(Professor.last_name.asc(), Professor.first_name.asc()).all()
     
     return [
         {
             "id": p.id,
-            "lastName": p.lastName,
-            "firstName": p.firstName,
-            "emailAddress": p.emailAddress,
-            "positionShortName": p.positionShortName,
-            "phdShortName": p.phdShortName,
-            "otherTitle": p.otherTitle
-        } for p in profesori
+            "lastName": p.last_name,
+            "firstName": p.first_name,
+            "emailAddress": p.email_address,
+            "positionShortName": p.position_short_name,
+            "phdShortName": p.phd_short_name,
+            "otherTitle": p.other_title
+        } for p in professors
     ]
 
-@router.get("/sali")
-async def get_active_sali(db: Session = Depends(get_db)):
+@router.get("/rooms")
+async def get_active_rooms(db: Session = Depends(get_db)):
     """
-    Returnează sălile care au orarul descărcat (has_schedule=True).
+    Returns rooms that have their schedule downloaded (has_schedule=True).
     """
-    sali = db.query(Sala).filter(
-        Sala.has_schedule == True
-    ).order_by(Sala.name.asc()).all()
+    rooms = db.query(Room).filter(
+        Room.has_schedule == True
+    ).order_by(Room.name.asc()).all()
     
     return [
         {
             "id": s.id,
-            "nume": s.name,
-            "shortName": s.shortName,
-            "buildingName": s.buildingName
-        } for s in sali
+            "name": s.name,
+            "shortName": s.short_name,
+            "buildingName": s.building_name
+        } for s in rooms
     ]
 
-@router.get("/grupe")
-async def get_active_grupe(db: Session = Depends(get_db)):
+@router.get("/groups")
+async def get_active_groups(db: Session = Depends(get_db)):
     """
-    Returnează grupele care au orarul descărcat (has_schedule=True).
+    Returns groups that have their schedule downloaded (has_schedule=True).
     """
-    grupe = db.query(Subgrupa).filter(
-        Subgrupa.has_schedule == True
-    ).order_by(Subgrupa.specializationShortName, Subgrupa.groupName.asc(), Subgrupa.subgroupIndex.asc()).all()
+    groups = db.query(Subgroup).filter(
+        Subgroup.has_schedule == True
+    ).order_by(Subgroup.specialization_short_name, Subgroup.group_name.asc(), Subgroup.subgroup_index.asc()).all()
     
     return [
         {
             "id": g.id,
-            "nume": g.groupName, 
-            "subgroupIndex": g.subgroupIndex if g.subgroupIndex else '',
-            "studyYear": g.studyYear,
-            "specializationShortName": g.specializationShortName
-        } for g in grupe
+            "name": g.group_name, 
+            "subgroupIndex": g.subgroup_index if g.subgroup_index else '',
+            "studyYear": g.study_year,
+            "specializationShortName": g.specialization_short_name
+        } for g in groups
     ]
 
-@router.get("/tip-activitate")
-async def get_tipuri_activitate(db: Session = Depends(get_db)):
+@router.get("/activity-type")
+async def get_activity_types(db: Session = Depends(get_db)):
     """
-    Returnează tipurile unice de activitate (Curs, Laborator, Seminar, etc.)
-    extrase direct din coloana typeLongName a tabelului Orar.
+    Returns unique activity types (Lecture, Lab, Seminar, etc.)
+    extracted directly from the type_long_name column of the Schedule table.
     """
-    # Extragem valorile distincte din coloana typeLongName
-    query = db.query(Orar.typeLongName).distinct().all()
+    # Extract distinct values from the type_long_name column
+    query = db.query(Schedule.type_long_name).distinct().all()
     
-    # Convertim lista de tuple în listă de string-uri, eliminând valorile None (dacă există)
-    tipuri = sorted([t[0] for t in query if t[0]])
+    # Convert list of tuples to list of strings, removing None values (if any)
+    types = sorted([t[0] for t in query if t[0]])
     
-    return tipuri
+    return types
 
 @router.get("/weeks")
 async def get_future_weeks(db: Session = Depends(get_db)):
     """
-    Returnează semestrul curent, săptămânile de curs rămase și statusul actual.
+    Returns the current semester, remaining lecture weeks, and current status.
     """
     current_semester, active_weeks, current_status, last_lecture_date = get_future_weeks_logic(db)
     
@@ -97,21 +96,21 @@ async def get_future_weeks(db: Session = Depends(get_db)):
         "current_status": current_status
     }
 
-@router.post("/weeks-valide")
+@router.post("/valid-weeks")
 async def get_valid_weeks(req: WeeksRequest, db: Session = Depends(get_db)):
     '''
-    Returnează săptămânile valide pentru grupe, ținând cont de anul de studiu.
+    Returns valid weeks for groups, taking into account the year of study.
     '''
-    # Extragem lista din obiectul JSON primit
-    grupe_ids = req.grupe_ids
+    # Extract the list from the received JSON object
+    group_ids = req.group_ids
     
-    # Determinăm semestrul și săptămânile de curs generale din calendar
+    # Determine the semester and general lecture weeks from the calendar
     current_semester, active_weeks, _, _ = get_future_weeks_logic(db)
     
-    # Determinăm limita superioară pentru grupele selectate (10 sau 14)
-    max_week_limit = get_max_week_for_groups(db, grupe_ids, current_semester)
+    # Determine the upper limit for the selected groups (10 or 14)
+    max_week_limit = get_max_week_for_groups(db, group_ids, current_semester)
     
-    # Filtrăm săptămânile active care depășesc limita grupei
+    # Filter active weeks that exceed the group limit
     filtered_weeks = [w for w in active_weeks if w <= max_week_limit]
     
     return {
@@ -119,32 +118,32 @@ async def get_valid_weeks(req: WeeksRequest, db: Session = Depends(get_db)):
         "max_week_limit": max_week_limit
     }
 
-@router.get("/tipuri-activitate-profesor")
-async def get_tipuri_activitate_profesor(
+@router.get("/professor-activity-types")
+async def get_professor_activity_types(
     email: str, 
-    materie: str, 
+    subject: str, 
     db: Session = Depends(get_db)
 ):
     """
-    Returnează tipurile de activitate (Curs, Laborator, etc.) pe care un profesor
-    le are în orar pentru o anumită materie.
+    Returns activity types (Lecture, Lab, etc.) that a professor
+    has in their schedule for a specific subject.
     """
-    # Găsim profesorul după email pentru a-i afla ID-ul
-    profesor = db.query(Profesor).filter(Profesor.emailAddress == email).first()
-    if not profesor:
+    # Find the professor by email to get their ID
+    professor = db.query(Professor).filter(Professor.email_address == email).first()
+    if not professor:
         return []
 
-    # Construim string-ul de căutare pentru idUrl (formatul p + id)
-    prof_url_id = f"p{profesor.id}"
+    # Construct the search string for id_url (format p + id)
+    prof_url_id = f"p{professor.id}"
 
-    # Căutăm în Orar tipurile distincte
-    # Verificăm unde idUrl conține id-ul profesorului și materia corespunde
-    query = db.query(Orar.typeLongName).distinct().filter(
-        Orar.idURL == prof_url_id,
-        func.lower(Orar.topicLongName) == func.lower(materie)
+    # Search in Schedule for distinct types
+    # Check where id_url matches professor id and subject matches
+    query = db.query(Schedule.type_long_name).distinct().filter(
+        Schedule.id_url == prof_url_id,
+        func.lower(Schedule.topic_long_name) == func.lower(subject)
     ).all()
 
-    # Curățăm rezultatele
-    tipuri = sorted([t[0] for t in query if t[0]])
+    # Clean the results
+    types = sorted([t[0] for t in query if t[0]])
 
-    return tipuri
+    return types
