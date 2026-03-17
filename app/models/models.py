@@ -8,190 +8,191 @@ import enum
 class UserRole(enum.Enum):
     ADMIN = "ADMIN"
     STUDENT = "STUDENT"
-    PROFESOR = "PROFESOR"
+    PROFESSOR = "PROFESSOR"
 
-# --- TABELE DE LEGĂTURĂ ---
-rezervari_grupe = Table(
-    "rezervari_grupe",
+# --- JUNCTION TABLES ---
+reservations_subgroups = Table(
+    "reservations_subgroups",
     Base.metadata,
-    Column("rezervare_id", Integer, ForeignKey("rezervari.id"), primary_key=True),
-    Column("subgrupa_id", Integer, ForeignKey("subgrupe.id"), primary_key=True),
+    Column("reservation_id", Integer, ForeignKey("reservations.id"), primary_key=True),
+    Column("subgroup_id", Integer, ForeignKey("subgroups.id"), primary_key=True),
 )
 
-# --- MODELE PRINCIPALE ---
+# --- MAIN MODELS ---
 
-class Facultate(Base):
-    __tablename__ = "facultati"
+class Faculty(Base):
+    __tablename__ = "faculties"
     id = Column(Integer, primary_key=True)
-    shortName = Column(String)
-    longName = Column(String)
-    subgrupe = relationship("Subgrupa", back_populates="facultate")
-    profesori = relationship("Profesor", back_populates="facultate")
+    short_name = Column(String)
+    long_name = Column(String)
+    subgroups = relationship("Subgroup", back_populates="faculty")
+    professors = relationship("Professor", back_populates="faculty")
 
-class Profesor(Base):
-    __tablename__ = "profesori"
+class Professor(Base):
+    __tablename__ = "professors"
     id = Column(Integer, primary_key=True)
-    lastName = Column(String)
-    firstName = Column(String)
-    positionShortName = Column(String)
-    phdShortName = Column(String)
-    otherTitle = Column(String)
-    emailAddress = Column(String, index=True, nullable=True)
-    faculty_id = Column(Integer, ForeignKey("facultati.id"), nullable=True)
-    departmentName = Column(String)
+    llast_name = Column(String)
+    first_name = Column(String)
+    position_short_name = Column(String)
+    phd_short_name = Column(String)
+    other_title = Column(String)
+    email_address = Column(String, index=True, nullable=True)
+    faculty_id = Column(Integer, ForeignKey("faculties.id"), nullable=True)
+    department_name = Column(String)
     has_schedule = Column(Boolean, default=False)
 
-    # Relația către modelul User
-    user_account = relationship("User", back_populates="profesor_info", uselist=False)
+    # Relation to User model
+    user_account = relationship("User", back_populates="professor_info", uselist=False)
 
-    facultate = relationship("Facultate", back_populates="profesori")
-    orar = relationship("Orar", back_populates="profesor")
-    rezervari_titular = relationship("Rezervare", back_populates="profesor_titular")
+    faculty = relationship("Faculty", back_populates="professors")
+    schedule = relationship("Schedule", back_populates="professor")
+    main_reservations = relationship("Reservation", back_populates="main_professor")
 
-class Sala(Base):
-    __tablename__ = "sali"
+class Room(Base):
+    __tablename__ = "rooms"
     id = Column(Integer, primary_key=True)
     name = Column(String, unique=True)
-    shortName = Column(String)
-    buildingName = Column(String)
-    capacitate = Column(Integer)
+    short_name = Column(String)
+    building_name = Column(String)
+    capacity = Column(Integer)
     computers = Column(Integer)
     has_schedule = Column(Boolean, default=False)
 
-    orar = relationship("Orar", back_populates="sala")
-    rezervari = relationship("Rezervare", back_populates="sala")
+    schedule = relationship("Schedule", back_populates="room")
+    reservations = relationship("Reservation", back_populates="room")
 
-class Subgrupa(Base):
-    __tablename__ = "subgrupe"
+class Subgroup(Base):
+    __tablename__ = "subgroups"
     id = Column(Integer, primary_key=True)
     type = Column(String)
-    faculty_id = Column(Integer, ForeignKey("facultati.id"))
-    specializationShortName = Column(String)
-    studyYear = Column(Integer)
-    groupName = Column(String)
-    subgroupIndex = Column(String)
-    isModular = Column(Integer)
+    faculty_id = Column(Integer, ForeignKey("faculties.id"))
+    specialization_short_name = Column(String)
+    study_year = Column(Integer)
+    group_name = Column(String)
+    subgroup_index = Column(String)
+    is_modular = Column(Integer)
     has_schedule = Column(Boolean, default=False)
 
-    facultate = relationship("Facultate", back_populates="subgrupe")
+    faculty = relationship("Faculty", back_populates="subgroups")
 
-class Orar(Base):
-    __tablename__ = "orar"
+class Schedule(Base):
+    __tablename__ = "schedule"
     id = Column(Integer, primary_key=True)
-    idURL = Column(String, primary_key=True, index=True) 
-    typeShortName = Column(String)
-    teacherID = Column(Integer, ForeignKey("profesori.id"), nullable=True)
-    roomId = Column(Integer, ForeignKey("sali.id"), nullable=True)
-    topicLongName = Column(String)
-    topicShortName = Column(String)
-    weekDay = Column(Integer)
-    startHour = Column(String)
+    id_url = Column(String, primary_key=True, index=True) 
+    type_short_name = Column(String)
+    teacher_id = Column(Integer, ForeignKey("professors.id"), nullable=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
+    topic_long_name = Column(String)
+    topic_short_name = Column(String)
+    week_day = Column(Integer)
+    start_hour = Column(String)
     duration = Column(Integer)
     parity = Column(Integer) 
-    otherInfo = Column(String)
-    typeLongName = Column(String)
-    isDidactic = Column(Integer)
-    grupa = Column(String, index=True)
+    other_info = Column(String)
+    type_long_name = Column(String)
+    is_didactic = Column(Integer)
+    group_info = Column(String)
 
-    profesor = relationship("Profesor", back_populates="orar")
-    sala = relationship("Sala", back_populates="orar")
+    professor = relationship("Professor", back_populates="schedule")
+    room = relationship("Room", back_populates="schedule")
 
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
-    lastName = Column(String)
-    firstName = Column(String)
+    last_name = Column(String)
+    first_name = Column(String)
     email = Column(String, unique=True, index=True, nullable=False)
     role = Column(String, default=UserRole.STUDENT.value) 
-    teacher_id = Column(Integer, ForeignKey("profesori.id"), nullable=True)
+    teacher_id = Column(Integer, ForeignKey("professors.id"), nullable=True)
 
     last_login = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
-    # Relația către modelul Profesor
-    profesor_info = relationship("Profesor", back_populates="user_account")
+    # Relation to Professor model
+    professor_info = relationship("Professor", back_populates="user_account")
 
-class CerereEmailProfesor(Base):
-    __tablename__ = "cereri_email_profesori"
+class ProfessorEmailRequest(Base):
+    __tablename__ = "professor_email_requests"
     id = Column(Integer, primary_key=True)
-    lastName = Column(String, nullable=False)
-    firstName = Column(String, nullable=False)
+    last_name = Column(String, nullable=False)
+    first_name = Column(String, nullable=False)
     email = Column(String, nullable=False)
-    data_cerere = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    request_date = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     status = Column(String, default="pending") # "pending", "approved", "rejected"
-    data_solutionare = Column(DateTime, nullable=True)
+    resolution_date = Column(DateTime, nullable=True)
 
-class Rezervare(Base):
-    __tablename__ = "rezervari"
+class Reservation(Base):
+    __tablename__ = "reservations"
     id = Column(Integer, primary_key=True)
-    profesor_id = Column(Integer, ForeignKey("profesori.id"), nullable=False)
-    sala_id = Column(Integer, ForeignKey("sali.id"), nullable=False)
-    materie = Column(String, nullable=False)
-    tip = Column(String, nullable=False)
-    oraInceput = Column(Integer, nullable=False)
-    durata = Column(Integer, nullable=False)
-    zi = Column(Integer, nullable=False)
-    saptamana = Column(Integer, nullable=False)
-    data_calendaristica = Column(Date, nullable=False)
-    capacitate_necesara = Column(Integer, default=0)
+    professor_id = Column(Integer, ForeignKey("professors.id"), nullable=False)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
+    subject = Column(String, nullable=False)
+    type = Column(String, nullable=False)
+    start_time_minutes = Column(Integer, nullable=False) 
+    duration = Column(Integer, nullable=False) 
+    day_of_week = Column(Integer, nullable=False) 
+    week_number = Column(Integer, nullable=False) 
+    calendar_date = Column(Date, nullable=False)
+    required_capacity = Column(Integer, default=0)
     
-    status = Column(String, default="rezervat")
+    status = Column(String, default="reserved")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    motiv_anulare = Column(String, nullable=True)
+    cancellation_reason = Column(String, nullable=True)
 
-    profesor_titular = relationship("Profesor", back_populates="rezervari_titular", foreign_keys=[profesor_id])
-    sala = relationship("Sala", back_populates="rezervari")
+    main_professor = relationship("Professor", back_populates="main_reservations", foreign_keys=[professor_id])
+    room = relationship("Room", back_populates="reservations")
     
-    grupe = relationship("Subgrupa", secondary=rezervari_grupe)
+    subgroups = relationship("Subgroup", secondary=reservations_subgroups)
 
-class SistemStatus(Base):
-    __tablename__ = "sistem_status"
+class SystemStatus(Base):
+    __tablename__ = "system_status"
     id = Column(Integer, primary_key=True)
     is_vacation = Column(Boolean, default=False)
     is_updating = Column(Boolean, default=False)
     last_sync = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     message = Column(String, nullable=True)
     
-    # --- Coloane pentru setările de sincronizare ---
+    # --- Columns for synchronization settings ---
     auto_sync_enabled = Column(Boolean, default=True)
-    sync_interval = Column(String, default="weekly") # daily, weekly sau monthly
-    sync_time = Column(String, default="00:00")     # Format "HH:MM"
-
-class IstoricSincronizare(Base):
-    __tablename__ = "istoric_sincronizari"
-    id = Column(Integer, primary_key=True)
-    tip_sincronizare = Column(String)  # "Base", "Calendar", "Orar"
-    tip_declansare = Column(String)    # "Manual" sau "Automat"
-    data_start = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    data_final = Column(DateTime, nullable=True)
-    status = Column(String)            # "Succes" sau "Eroare"
-    mesaj_eroare = Column(String, nullable=True)
-
-class CalendarUniversitar(Base):
-    __tablename__ = "calendar_universitar"
-    an_universitar = Column(String, primary_key=True) # ex: "2025-2026"
-    semestru = Column(Integer, primary_key=True)      # 1 sau 2
-    saptamana = Column(Integer, primary_key=True)     # 1 - 14
+    sync_interval = Column(String, default="weekly") # daily, weekly or monthly
+    sync_time = Column(String, default="00:00")     # "HH:MM" format
     
-    perioada = Column(String, nullable=False)         # ex: "29.09.2025-05.10.2025" sau "22.12.2025-24.12.2025;08.01.2026-11.01.2026"
-    observatii = Column(String, nullable=True)        # Sărbători sau motive de fracționare
+class SyncHistory(Base):
+    __tablename__ = "sync_history"
+    id = Column(Integer, primary_key=True)
+    sync_type = Column(String)      # "Base", "Calendar", "Schedule"
+    trigger_type = Column(String)   # "Manual" or "Automatic"
+    start_date = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    end_date = Column(DateTime, nullable=True)
+    status = Column(String)         # "Success" or "Error"
+    error_message = Column(String, nullable=True)
 
-# --- LOGICA DE SINCRONIZARE (SQLAlchemy Events) ---
-# Când se schimbă email-ul în tabela Profesor -> Modifică în User
-@event.listens_for(Profesor.emailAddress, 'set')
+class AcademicCalendar(Base):
+    __tablename__ = "academic_calendar"
+    academic_year = Column(String, primary_key=True) # e.g., "2025-2026"
+    semester = Column(Integer, primary_key=True)     # 1 or 2
+    week_number = Column(Integer, primary_key=True)  # 1 - 14
+    
+    period = Column(String, nullable=False)          # e.g., "29.09.2025-05.10.2025"
+    notes = Column(String, nullable=True)            # Holidays or reason for splitting
+
+# --- SYNCHRONIZATION LOGIC (SQLAlchemy Events) ---
+
+# When emailAddress changes in Professor table -> Update in User table
+@event.listens_for(Professor.email_address, 'set')
 def sync_professor_to_user(target, value, oldvalue, initiator):
     if value == oldvalue or value is None:
         return
     
-    # Extragem sesiunea activă a obiectului
+    # Extract the active session of the object
     from sqlalchemy.orm import object_session
     session = object_session(target)
     
     if target.user_account:
         if session:
-            # Verificăm dacă noul email este deja ocupat de ALT utilizator
-            # pentru a evita crash-ul bazei de date (Unique Constraint)
+            # Check if the new email is already taken by ANOTHER user
+            # to avoid database crash (Unique Constraint)
             existing_user = session.query(User).filter(
                 User.email == value, 
                 User.id != target.user_account.id
@@ -200,8 +201,8 @@ def sync_professor_to_user(target, value, oldvalue, initiator):
             if not existing_user:
                 target.user_account.email = value
             else:
-                print(f"⚠️ Conflict: Email-ul {value} este deja folosit. Sincronizarea contului a fost sărită.")
+                print(f"⚠️ Conflict: Email {value} is already in use. Account sync skipped.")
         else:
-            # Dacă nu avem sesiune (obiectul e nou), doar setăm valoarea
-            # SQLAlchemy va gestiona restul la flush
+            # If there is no session (object is new), just set the value
+            # SQLAlchemy will handle the rest on flush
             target.user_account.email = value
