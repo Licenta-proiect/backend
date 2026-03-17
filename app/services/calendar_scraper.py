@@ -11,26 +11,26 @@ from dotenv import load_dotenv
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
-from app.models.models import CalendarUniversitar
+from app.models.models import AcademicCalendar
 
 load_dotenv()
 
-# Configurare Client Gemini
+# Gemini Client Configuration
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 def validate_and_fix_period(period_str: str) -> bool:
     """
-    Verifică dacă toate datele din string-ul perioadă sunt valide calendaristic.
-    Format așteptat: yyyy.mm.dd-yyyy.mm.dd (opțional multiple separate prin ;)
+    Checks if all dates in the period string are calendar-valid.
+    Expected format: yyyy.mm.dd-yyyy.mm.dd (optional multiples separated by ;)
     """
     if not period_str:
         return False
     
-    # Separăm intervalele (cazul săptămânilor fragmentate)
+    # Separate intervals (case for fragmented weeks)
     intervals = period_str.split(';')
     
     for interval in intervals:
-        # Separăm start de end
+        # Separate start from end
         dates = interval.split('-')
         if len(dates) != 2:
             return False
@@ -38,67 +38,67 @@ def validate_and_fix_period(period_str: str) -> bool:
         for date_text in dates:
             date_text = date_text.strip()
             try:
-                # Încercăm să parsăm data. Dacă e 29 februarie într-un an non-bisect, 
-                # aici va arunca ValueError
+                # Try to parse the date. If it's Feb 29th in a non-leap year,
+                # this will throw a ValueError
                 datetime.strptime(date_text, "%Y.%m.%d")
             except ValueError:
-                print(f"❌ Dată invalidă detectată: {date_text} în intervalul {period_str}")
+                print(f"Invalid date detected: {date_text} in interval {period_str}")
                 return False
     return True
 
 async def get_text_from_url(url: str):
-    """Extrage textul curat de pe pagina calendarului."""
+    """Extracts clean text from the calendar page."""
     async with httpx.AsyncClient() as h_client:
         response = await h_client.get(url, timeout=30.0)
         soup = BeautifulSoup(response.text, 'html.parser')
-        # Eliminam elementele inutile
+        # Remove unnecessary elements
         for element in soup(["script", "style", "nav", "footer"]):
             element.decompose()
         return soup.get_text(separator=' ', strip=True)
 
 async def process_with_gemini(text: str):
     prompt = f"""
-    Rol: Expert în extragerea datelor structurate.
-    Sarcina: Analizează calendarul academic și extrage activitățile conform următoarelor reguli stricte:
-
-    1. PERIOADE DE CURS (Săptămânile 1-14):
-       - Împarte aceste perioade în exact 14 rânduri per semestru.
-       - Folosește numerele 1-14 pentru coloana "saptamana".
-       - Format perioadă: yyyy.mm.dd-yyyy.mm.dd (ex: 2025.09.29-2025.10.05).
-       - Dacă o săptămână de curs este fragmentată de vacanță, pune ambele intervale pe același rând separate prin ";" (ex: 2025.12.22-2025.12.24;2026.01.08-2026.01.11).
-
-    2. ALTE ACTIVITĂȚI (Sesiuni, Restanțe, Reexaminări, Vacanțe):
-       - NU le împărți pe săptămâni. Extrage-le ca UN SINGUR rând per activitate, exact cum apar în site.
-       - Pentru coloana "saptamana", continuă numerotarea de la 15 în sus (15, 16, 17...) pentru a păstra cheia primară unică în baza de date.
-       - La începutul Semestrului 2, numerotarea săptămânilor de curs se reia de la 1 la 14, iar activitățile post-semestru continuă de la 15 în sus.
-
-    3. VERIFICARE CALENDARISTICĂ (CRITIC):
-       - Verifică dacă anul vizat este BISECT sau nu. 
-       - În anii NON-BISECȚI (cum este 2026), februarie are STRICT 28 de zile. NU genera data de 2026.02.29.
-       - Asigură-te că trecerea de la o lună la alta este corectă (ex: după 30 sau 31 ale lunii urmează data de 01 a lunii următoare).
-       - Toate datele generate trebuie să fie VALIDE matematic.
-
-    4. FORMAT DATE: yyyy.mm.dd (Exemplu: 2026.01.19-2026.02.08).
-
-    5. ANUL UNIVERISTAR: "yyyy-yyyy"
+    Role: Expert in structured data extraction.
+    Task: Analyze the academic calendar and extract activities according to the following strict rules:
     
-    6. OBSERVATII:
-       - Scrie tipul activității: "Curs", "Sesiune Examene", "Sesiune Restante", "Vacanta", "Reexaminari".
-       - Adaugă zilele libere legale dacă există DOAR în acel interval, separate prin ";" (ex: "Sesiune Examene; 2026.01.24").
+    1. COURSE PERIODS (Weeks 1-14):
+       - Split these periods into exactly 14 rows per semester.
+       - Use numbers 1-14 for the "week_number" column.
+       - Period format: yyyy.mm.dd-yyyy.mm.dd (e.g., 2025.09.29-2025.10.05).
+       - If a course week is fragmented by a holiday, put both intervals on the same row separated by ";" (e.g., 2025.12.22-2025.12.24;2026.01.08-2026.01.11).
 
-    7. ATENȚIE: Pentru extragerea datelor structurate folosește DOAR textul sursă.
+    2. OTHER ACTIVITIES (Exam Sessions, Re-takes, Re-examinations, Vacations):
+       - DO NOT split these into weeks. Extract them as a SINGLE row per activity, exactly as they appear on the site.
+       - For the "week_number" column, continue numbering from 15 upwards (15, 16, 17...) to keep the primary key unique in the database.
+       - At the start of Semester 2, course week numbering resets from 1 to 14, while post-semester activities continue from 15 upwards.
 
-    Format Ieșire: JSON (listă de obiecte) fără text explicativ.
-    Structura JSON:
+    3. CALENDAR VERIFICATION (CRITICAL):
+       - Check if the targeted year is a LEAP year or not. 
+       - In NON-LEAP years (such as 2026), February has STRICTLY 28 days. DO NOT generate the date 2026.02.29.
+       - Ensure the transition from one month to the next is correct (e.g., after the 30th or 31st of the month comes the 01st of the following month).
+       - All generated dates must be mathematically VALID.
+
+    4. DATE FORMAT: yyyy.mm.dd (Example: 2026.01.19-2026.02.08).
+
+    5. ACADEMIC YEAR: "yyyy-yyyy"
+
+    6. NOTES:
+       - Write the activity type: "Course", "Exam Session", "Re-take Session", "Vacation", "Re-examinations".
+       - Add legal public holidays if they exist ONLY in that interval, separated by ";" (e.g., "Exam Session; 2026.01.24").
+
+    7. ATTENTION: Use ONLY the source text for structured data extraction.
+
+    Output Format: JSON (list of objects) without explanatory text.
+    JSON Structure:
     {{
-        "an_universitar": "yyyy-yyyy",
-        "semestru": int,
-        "saptamana": int,
-        "perioada": "string",
-        "observatii": "string"
+        "academic_year": "yyyy-yyyy",
+        "semester": int,
+        "week_number": int,
+        "period": "string",
+        "notes": "string"
     }}
 
-    Text sursă:
+    Source text:
     {text}
     """
     
@@ -107,65 +107,65 @@ async def process_with_gemini(text: str):
             model='gemini-2.5-flash', 
             contents=prompt
         )
-        # Eliminăm eventualele blocuri de cod markdown din răspuns
+        # Remove any markdown code blocks from the response
         raw_json = response.text.replace('```json', '').replace('```', '').strip()
         return json.loads(raw_json)
     except Exception as e:
         error_str = str(e)
-        # Gestionăm atât limitele de rată (429) cât și indisponibilitatea (503 / 500)
+        # Handle both rate limits (429) and unavailability (503 / 500)
         if "429" in error_str or "503" in error_str:
             wait_time = 65
-            print(f"⏳ Eroare detectată ({'Limită' if '429' in error_str else 'Server supraîncărcat'}). Reîncercăm în {wait_time}s...")
+            print(f"Error detected ({'Limit' if '429' in error_str else 'Server overloaded'}). Retrying in {wait_time}s...")
             await asyncio.sleep(wait_time)
             return await process_with_gemini(text)
         raise e
 
 def save_to_database(calendar_data)-> bool:
-    """Șterge datele existente și inserează datele noi. Returnează True la succes."""
+    """Deletes existing data and inserts new data. Returns True on success."""
     db: Session = SessionLocal()
     try:
-        # Step 1: Ștergem toate rândurile din tabel folosind DELETE
-        print("🧹 Ștergem datele existente din calendar_universitar...")
-        db.execute(text("DELETE FROM calendar_universitar"))
+        # Step 1: Delete all rows from the table using DELETE
+        print("Deleting existing data from academic_calendar...")
+        db.execute(text("DELETE FROM academic_calendar"))
 
         valid_entries = []
 
-        # Step 2: Inserăm noile date primite de la Gemini
+        # Step 2: Insert new data received from Gemini
         for entry in calendar_data:
-            # Validare structurală de bază
-            period = entry.get('perioada', '')
+            # Basic structural validation
+            period = entry.get('period', '')
 
-            # Validare calendaristică strictă (Python check)
+            # Strict calendar validation (Python check)
             if not validate_and_fix_period(period):
-                # Aruncăm o excepție personalizată pentru a merge pe ramura de rollback
-                raise ValueError(f"Date invalide în perioada: {period}")
+                # Throw custom exception to trigger rollback branch
+                raise ValueError(f"Invalid dates in period: {period}")
 
-            # Pregătire date
-            entry['semestru'] = int(entry.get('semestru', 1))
-            entry['saptamana'] = int(entry.get('saptamana', 0))
-            entry['observatii'] = bleach.clean(entry.get('observatii', ''), tags=[], strip=True)
+            # Data preparation
+            entry['semester'] = int(entry.get('semester', 1))
+            entry['week_number'] = int(entry.get('week_number', 0))
+            entry['notes'] = bleach.clean(entry.get('notes', ''), tags=[], strip=True)
             
-            valid_entries.append(CalendarUniversitar(**entry))
+            valid_entries.append(AcademicCalendar(**entry))
 
-        # Inserăm totul doar dacă toate rândurile sunt valide
+        # Insert everything only if all rows are valid
         db.add_all(valid_entries)
         db.commit()
-        print(f"✅ Succes! S-au populat {len(calendar_data)} săptămâni în formatul cerut.")
+        print(f"Success! Populated {len(calendar_data)} weeks in the required format.")
         return True
     
     except ValueError as ve:
-        print(f"⚠️ Validare eșuată: {ve}. Sincronizarea a fost oprită.")
+        print(f"Validation failed: {ve}. Synchronization stopped.")
         db.rollback()
         return False
     except Exception as e:
-        print(f"❌ Eroare DB: {e}")
+        print(f"DB Error: {e}")
         db.rollback()
         return False
     finally:
         db.close()
 
 async def run(url="https://usv.ro/academic/calendar-academic/", retries=3):
-    # URL-ul unde USV publica de obicei structura anului
+    # URL where USV usually publishes the year structure
     for i in range(retries):
         print("Step 1: Scraping text...")
         text = await get_text_from_url(url)
@@ -174,12 +174,11 @@ async def run(url="https://usv.ro/academic/calendar-academic/", retries=3):
         data = await process_with_gemini(text)
         
         print("Step 3: Saving to DB...")
-        # Modifică save_to_database să returneze True/False
+        # Modified save_to_database to return True/False
         success = save_to_database(data)
         if success:
             break
-        print(f"🔄 Reîncercăm procesarea (încercarea {i+2}/{retries})...")
-
+        print(f"Retrying process (attempt {i+2}/{retries})...")
 
 if __name__ == "__main__":
     asyncio.run(run("https://usv.ro/academic/calendar-academic/"))
