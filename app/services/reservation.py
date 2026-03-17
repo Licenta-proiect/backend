@@ -1,4 +1,4 @@
-# app\services\rezervari.py
+# app\services\reservation.py
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 from app.models.models import Rezervare, Subgrupa, Profesor, Sala, Orar
