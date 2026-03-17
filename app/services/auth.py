@@ -8,12 +8,12 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from authlib.integrations.starlette_client import OAuth
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.models.models import User, UserRole, Profesor
+from app.models.models import User, UserRole, Professor
 
-# Încărcare variabile din .env
+# Load environment variables from .env
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 ore
+ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 hours
 
 security = HTTPBearer()
 
@@ -27,7 +27,7 @@ oauth.register(
 )
 
 def create_access_token(data: dict):
-    """Generează un token JWT semnat."""
+    """Generates a signed JWT token."""
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
@@ -35,8 +35,8 @@ def create_access_token(data: dict):
 
 async def get_current_user(request: Request, db: Session = Depends(get_db), auth: HTTPAuthorizationCredentials = Depends(security)):
     """
-    Dependență pentru a extrage utilizatorul curent.
-    Verifică token-ul din Header-ul Authorization: Bearer <token>
+    Dependency to extract the current user.
+    Verifies the token from the Authorization Header: Bearer <token>
     """
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
@@ -63,42 +63,42 @@ async def get_current_user(request: Request, db: Session = Depends(get_db), auth
     return user
 
 async def handle_google_login(user_info: dict, db: Session):
-    """Gestionează logica de înregistrare/autentificare după callback-ul Google."""
+    """Handles registration/authentication logic after the Google callback."""
     email = user_info['email']
     user = db.query(User).filter(User.email == email).first()
     
     if not user:
-        # 1. Verificăm dacă este profesor (email-ul există în tabelul profesori)
-        profesor_data = db.query(Profesor).filter(
-            Profesor.emailAddress == email,
-            Profesor.has_schedule == True
+        # 1. Check if the user is a professor (email exists in professors table)
+        professor_data = db.query(Professor).filter(
+            Professor.email_address == email,
+            Professor.has_schedule == True
         ).first()
         
         teacher_id = None
-        if profesor_data:
-            new_role = UserRole.PROFESOR.value
-            teacher_id = profesor_data.id  # Salvăm ID-ul pentru a-l pune în noul User
-        # 2. Verificăm dacă este student (are domeniul @student.usv.ro)
+        if professor_data:
+            new_role = UserRole.PROFESSOR.value
+            teacher_id = professor_data.id  # Save ID to link it to the new User
+        # 2. Check if the user is a student (domain matches @student.usv.ro)
         elif email.endswith("@student.usv.ro"):
             new_role = UserRole.STUDENT.value
-        # 3. Dacă nu este niciunul, blocăm accesul
+        # 3. If neither, block access
         else:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, 
                 detail="Doar studenții și profesorii de la FIESC cu orar activ pot accesa sistemul."
             )
 
-        # Creăm utilizatorul nou cu teacher_id dacă a fost găsit
+        # Create the new user with teacher_id if found
         user = User(
             email=email,
-            firstName=user_info.get('given_name'),
-            lastName=user_info.get('family_name'),
+            first_name=user_info.get('given_name'),
+            last_name=user_info.get('family_name'),
             role=new_role,
-            teacher_id=teacher_id  # Aici se face legătura automată la prima logare
+            teacher_id=teacher_id  # Automatic link established on first login
         )
         db.add(user)
 
-    # Setăm timpul conectării curente pentru toți utilizatorii
+    # Set the current login time for all users
     user.last_login = datetime.now(timezone.utc)
 
     db.commit()
