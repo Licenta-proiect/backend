@@ -201,7 +201,7 @@ def sync_professor_to_user(target, value, oldvalue, initiator):
             if not existing_user:
                 target.user_account.email = value
             else:
-                print(f"⚠️ Conflict: Email {value} is already in use. Account sync skipped.")
+                print(f"Conflict: Email {value} is already in use. Account sync skipped.")
         else:
             # If there is no session (object is new), just set the value
             # SQLAlchemy will handle the rest on flush
