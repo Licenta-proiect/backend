@@ -4,7 +4,7 @@ from datetime import datetime
 from dotenv import load_dotenv, find_dotenv
 
 def get_now():
-    """Returnează data din .env dacă există, altfel datetime.now()"""
+    """Returns the date from .env if it exists, otherwise returns datetime.now()"""
     #load_dotenv(find_dotenv(), override=True)
     
     env_time = os.getenv("APP_CURRENT_TIME")
@@ -12,5 +12,5 @@ def get_now():
         try:
             return datetime.strptime(env_time, "%Y-%m-%d %H:%M:%S")
         except ValueError:
-            print(f"⚠️ Format invalid in .env pentru APP_CURRENT_TIME. Folosim timpul real.")
+            print(f"Invalid format in .env for APP_CURRENT_TIME. Using real-time instead.")
     return datetime.now()
