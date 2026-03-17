@@ -12,7 +12,7 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# Dependență pentru a obține sesiunea de DB în rutele API
+# Dependency to get the DB session in API routes
 def get_db():
     db = SessionLocal()
     try:
@@ -22,9 +22,9 @@ def get_db():
 
 if __name__ == "__main__":
     try:
-        # Încearcă să creeze o conexiune fizică
+        # Attempt to establish a physical connection
         connection = engine.connect()
-        print("Conexiune reușită la PostgreSQL! 🚀")
+        print("Successful connection to PostgreSQL!")
         connection.close()
     except Exception as e:
-        print(f"Eroare de conexiune: {e}")
+        print(f"Connection error: {e}")
