@@ -1,53 +1,53 @@
 # app\services\sync_logger.py
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
-from app.models.models import IstoricSincronizare
+from app.models.models import SyncHistory
 from app.db.session import SessionLocal
 
 def cleanup_old_sync_logs(db: Session, days_to_keep: int = 150):
     """
-    Șterge înregistrările mai vechi de un număr de zile.
-    Default setat la 150 de zile pentru a păstra baza de date curată.
+    Deletes log entries older than a specific number of days.
+    Default set to 150 days to keep the database clean.
     """
     threshold_date = datetime.now(timezone.utc) - timedelta(days=days_to_keep)
     
-    deleted_count = db.query(IstoricSincronizare).filter(
-        IstoricSincronizare.data_start < threshold_date
+    deleted_count = db.query(SyncHistory).filter(
+        SyncHistory.start_date < threshold_date
     ).delete()
     
     db.commit()
     return deleted_count
 
-async def run_sync_with_logging(func, tip_sincronizare: str, tip_declansare: str = "Manual"):
+async def run_sync_with_logging(func, sync_type: str, trigger_type: str = "Manual"):
     """
-    Execută sincronizarea și loghează procesul.
+    Executes the synchronization and logs the process.
     """
     db: Session = SessionLocal()
     
-    # 1. Creăm înregistrarea de start
-    istoric = IstoricSincronizare(
-        tip_sincronizare=tip_sincronizare,
-        tip_declansare=tip_declansare,
-        data_start=datetime.now(timezone.utc),
-        status="În curs"
+    # 1. Create the start entry
+    history = SyncHistory(
+        sync_type=sync_type,
+        trigger_type=trigger_type,
+        start_date=datetime.now(timezone.utc),
+        status="In progress"
     )
-    db.add(istoric)
+    db.add(history)
     db.commit()
-    db.refresh(istoric)
+    db.refresh(history)
 
     try:
-        # 2. Executăm funcția de scraping
+        # 2. Execute the scraping function
         await func() 
         
-        # 3. Marcăm succesul
-        istoric.status = "Succes"
+        # 3. Mark as success
+        history.status = "Success"
     except Exception as e:
-        # 4. Marcăm eroarea și salvăm mesajul
-        istoric.status = "Eroare"
-        istoric.mesaj_eroare = str(e)
+        # 4. Mark as error and save the message
+        history.status = "Error"
+        history.error_message = str(e)
     finally:
-        # 5. Finalizăm log-ul curent
-        istoric.data_final = datetime.now(timezone.utc)
+        # 5. Finalize the current log
+        history.end_date = datetime.now(timezone.utc)
         db.commit()
                 
         db.close()
