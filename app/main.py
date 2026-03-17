@@ -3,39 +3,39 @@ import os
 from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth, admin, profesori, subgrupe, data, rezervare
+from app.routers import auth, admin, professors, subgroups, data, reservation
 
 app = FastAPI(title="USV Recovery Manager")
 
-# Middleware pentru Sesiuni
+# Session Middleware
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY"))
 
-# Middleware pentru CORS 
+# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[f"{os.getenv('FRONTEND_URL')}"],  # Permite orice sursă (pentru dezvoltare)
+    allow_origins=[f"{os.getenv('FRONTEND_URL')}"],  # Allows the frontend origin
     allow_credentials=True,
-    allow_methods=["*"],  # Permite toate metodele (GET, POST, etc.)
-    allow_headers=["*"],  # Permite toți header-ii
+    allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allows all headers
 )
 
-# --- RUTE AUTENTIFICARE ---
+# --- AUTHENTICATION ROUTES ---
 app.include_router(auth.router)
 
-# --- RUTE ADMIN ---
+# --- ADMIN ROUTES ---
 app.include_router(admin.router)
 
-# --- RUTE PROFESORI ---
-app.include_router(profesori.router)
+# --- PROFESSORS ROUTES ---
+app.include_router(professors.router)
 
-# --- RUTE SUBGRUPE ---
-app.include_router(subgrupe.router)
+# --- SUBGROUPS ROUTES ---
+app.include_router(subgroups.router)
 
-# --- RUTE DATA ---
+# --- DATA ROUTES ---
 app.include_router(data.router)
 
-# --- RUTE REZERVARI ---
-app.include_router(rezervare.router)
+# --- RESERVATION ROUTES ---
+app.include_router(reservation.router)
 
 @app.get("/")
 def root():
