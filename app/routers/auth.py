@@ -10,15 +10,15 @@ from app.services.auth import (
 )
 
 from app.schemas.user import LoginResponse, ProfessorAccessRequestCreate
-from app.models.models import CerereEmailProfesor, User
+from app.models.models import ProfessorEmailRequest, User
 
-router = APIRouter(tags=["Autentificare"])
+router = APIRouter(tags=["Authentication"])
 
 @router.get("/login")
 async def login(request: Request):
     redirect_uri = request.url_for('auth_callback')
     
-    # Forțăm Google să afișeze fereastra de selecție a contului
+    # Force Google to display the account selection window
     return await oauth.google.authorize_redirect(
         request, 
         redirect_uri,
@@ -27,7 +27,7 @@ async def login(request: Request):
 
 @router.get("/logout")
 async def logout(request: Request):
-    request.session.clear() # Șterge datele temporare OAuth2
+    request.session.clear() # Clears temporary OAuth2 session data
     return {"message": "Logged out successfully"}
 
 @router.get("/auth/callback", response_model=LoginResponse) 
@@ -36,27 +36,27 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
         token = await oauth.google.authorize_access_token(request)
         user_info = token.get('userinfo')
 
-        # Această funcție aruncă HTTPException(403) dacă user-ul nu are acces
+        # This function throws HTTPException(403) if the user does not have access
         user = await handle_google_login(user_info, db)
         
         access_token = create_access_token(data={"sub": user.email})
         
-        # Construim URL-ul de frontend (localhost:3000/callback)
-        # Adăugăm datele necesare în query parameters
+        # Build the frontend URL (e.g., localhost:3000/callback)
+        # Add necessary data to query parameters
         frontend_url = f"{os.getenv('FRONTEND_URL')}/callback"
         params = {
             "access_token": access_token,
             "role": user.role,
             "email": user.email,
-            "firstName": user.firstName,
-            "lastName": user.lastName
+            "firstName": user.first_name,
+            "lastName": user.last_name
         }
         
         query_string = urllib.parse.urlencode(params)
         return RedirectResponse(url=f"{frontend_url}?{query_string}") 
     
     except HTTPException as e:
-        # Dacă este 403 sau altă eroare de business, trimitem mesajul în UI
+        # If it's 403 or another business error, send the message to the UI
         error_msg = urllib.parse.quote(e.detail)
         return RedirectResponse(url=f"{os.getenv('FRONTEND_URL')}/auth-error?message={error_msg}")
     
@@ -70,20 +70,20 @@ async def get_me(current_user: User = Depends(get_current_user)):
 @router.post("/request-access")
 async def request_professor_access(data: ProfessorAccessRequestCreate, db: Session = Depends(get_db)):
     '''
-    Cerere de la profesor către administrator pentru a i se actualiza email-ul în baza de date.
+    Request from a professor to the administrator to update their email in the database.
     '''
-    # Verificăm dacă există deja o cerere pentru acest email cu status "In asteptare"
-    existing_request = db.query(CerereEmailProfesor).filter(
-        CerereEmailProfesor.email == data.email,
-        CerereEmailProfesor.status == "pending"
+    # Check if a request already exists for this email with "pending" status
+    existing_request = db.query(ProfessorEmailRequest).filter(
+        ProfessorEmailRequest.email == data.email,
+        ProfessorEmailRequest.status == "pending"
     ).first()
 
     if existing_request:
         raise HTTPException(status_code=400, detail="Există deja o cerere în curs pentru acest email.")
 
-    new_request = CerereEmailProfesor(
-        firstName=data.firstName,
-        lastName=data.lastName,
+    new_request = ProfessorEmailRequest(
+        first_name=data.first_name,
+        last_name=data.last_name,
         email=data.email
     )
     
