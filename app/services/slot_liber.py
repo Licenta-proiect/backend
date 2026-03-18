@@ -344,43 +344,43 @@ def group_slots_for_ui(db: Session, free_slots_raw: dict, current_semester: int)
 
 if __name__ == "__main__":
     from app.db.session import SessionLocal
-    from app.schemas.user import SlotLiberRequest
+    from app.schemas.user import FreeSlotRequest
     import time
 
-    # 1. Simulăm obiectul Request
-    test_req = SlotLiberRequest(
+    # 1. Simulate the Request object
+    test_req = FreeSlotRequest(
         email="adina@eed.usv.ro",
-        materie="Criptografie şi securitate informaţională",
-        grupe_ids=[49, 50, 51],
-        sali_ids=[66, 24, 30],
-        durata=2,  # 2 ore
-        tip_activitate="Curs",
-        numar_persoane=0,
-        zi=2,   # Testăm pentru toate zilele săptămânii
-        saptamani=[9]
+        subject="Criptografie şi securitate informaţională",
+        group_ids=[49, 50, 51],
+        room_ids=[66, 24, 30],
+        duration=2,  # 2 hours
+        activity_type="Curs",
+        number_of_people=0,
+        day=2,   
+        weeks=[9]
     )
 
-    # 2. Deschidem sesiunea DB
+    # 2. Open DB session
     db_session = SessionLocal()
     
     try:
-        print(f"--- 🚀 Pornire Test CP-SAT ---")
+        print(f"--- 🚀 Starting CP-SAT Test ---")
         start_time = time.time()
 
-        # 1. Determinăm săptămânile active folosind logica de calendar
+        # 1. Determine active weeks using calendar logic
         current_semester, active_weeks, current_status, _ = get_future_weeks_logic(db_session)
-        print(f"📅 Status: {current_status} | Semestrul: {current_semester}")
-        print(f"🗓️ Săptămâni de curs rămase: {active_weeks}")
+        print(f"📅 Status: {current_status} | Semester: {current_semester}")
+        print(f"🗓️ Remaining course weeks: {active_weeks}")
 
-        # 2. Extragere date structurate
+        # 2. Extract structured data
         data_result = get_schedule_and_reservation_data(db_session, test_req, current_semester)
         
         if "error" in data_result or "info" in data_result:
-            print(f"❌ Mesaj: {data_result.get('error') or data_result.get('info')}")
+            print(f"❌ Message: {data_result.get('error') or data_result.get('info')}")
         else:
-            # Calculăm limita DOAR dacă datele au fost extrase cu succes
+            # Calculate the limit ONLY if data was extracted successfully
             max_w = data_result.get("max_week_limit", 14)
-            target_weeks = test_req.saptamani if test_req.saptamani else active_weeks
+            target_weeks = test_req.weeks if test_req.weeks else active_weeks
             
             filtered_active_weeks = [
                 w for w in target_weeks 
@@ -388,35 +388,34 @@ if __name__ == "__main__":
             ]
             
             if not filtered_active_weeks:
-                print(f"⚠️ Nicio săptămână din cele selectate ({test_req.saptamani}) nu este validă academic sau viitoare.")
+                print(f"⚠️ None of the selected weeks ({test_req.weeks}) are academically valid or in the future.")
             else:
-                print(f"✅ Date extrase. Calculăm pentru: {filtered_active_weeks}")
+                print(f"✅ Data extracted. Calculating for: {filtered_active_weeks}")
 
-                durata_min = test_req.durata * 60 if test_req.durata else 120
+                duration_min = test_req.duration * 60 if test_req.duration else 120
                 
-                # Rulăm solverul DOAR pe săptămânile filtrate
+                # Run the solver ONLY on the filtered weeks
                 free_slots_report = find_free_slots_cp_sat(
                     db=db_session, 
                     constraints=data_result, 
-                    sali_ids=test_req.sali_ids, 
-                    duration_minutes=durata_min,
-                    target_day=test_req.zi,
+                    room_ids=test_req.room_ids, 
+                    duration_minutes=duration_min,
+                    target_day=test_req.day,
                     active_weeks=filtered_active_weeks 
                 ) 
                 
                 ui_report = group_slots_for_ui(db_session, free_slots_report, current_semester)
 
                 if not ui_report:
-                    print("📭 Nu s-au găsit sloturi libere.")
+                    print("📭 No free slots found.")
                 else:
                     for week, days_list in ui_report.items():
-                        print(f"\n--- 📦 CARD SAPTAMANA {week} ---")
-                        # days_list este acum o LISTA de dictionare, nu un dictionar
+                        print(f"\n--- 📦 WEEK CARD {week} ---")
                         for day_info in days_list:
-                            print(f"  📍 {day_info['zi_nume']} ({day_info['data']}):")
-                            for opt in day_info['optiuni']:
-                                print(f"    🏢 Sala ID: {opt['sala_id']} | 🕒 Interval: {opt['ora_start']}:00 - {opt['ora_final']}:00")
+                            print(f"  📍 {day_info['day_name']} ({day_info['date']}):")
+                            for opt in day_info['options']:
+                                print(f"    🏢 Room ID: {opt['room_id']} | 🕒 Interval: {opt['start_time']}:00 - {opt['end_time']}:00")
 
-        print(f"\n⏱️ Timp execuție: {time.time()-start_time:.2f}s")
+        print(f"\n⏱️ Execution time: {time.time()-start_time:.2f}s")
     finally:
         db_session.close()
