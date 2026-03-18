@@ -7,7 +7,7 @@ from app.db.session import get_db
 from app.models.models import Orar, Subgrupa, Profesor, Sala
 from app.schemas.user import SlotAlternativRequest
 from app.services.reservation import get_reservations_by_subgroups
-from app.services.slot_alternativ import get_data_for_optimization, find_alternative_slots
+from app.services.alternative_slot import get_data_for_optimization, find_alternative_slots
 from app.services.future_weeks import get_future_weeks_logic
 from app.utils.time_helper import get_now
 

@@ -7,7 +7,7 @@ from app.db.session import get_db
 from app.models.models import Subgroup, Professor, Room, Schedule
 from app.schemas.user import WeeksRequest
 from app.services.future_weeks import get_future_weeks_logic
-from app.services.slot_liber import get_max_week_for_groups
+from app.services.free_slot import get_max_week_for_groups
 
 router = APIRouter(prefix="/data", tags=["Data"])
 

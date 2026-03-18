@@ -1,4 +1,4 @@
-# app\services\slot_alternativ.py
+# app\services\alternative_slot.py
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session

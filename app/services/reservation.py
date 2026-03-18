@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 from app.models.models import Reservation, Subgroup, Professor, Room, Schedule
 from app.schemas.user import SlotReservationRequest, ReservationCancellationRequest
-from app.services.slot_liber import check_subject_existence
+from app.services.free_slot import check_subject_existence
 from app.utils.time_helper import get_now
 
 def create_slot_reservation(db: Session, req: SlotReservationRequest):

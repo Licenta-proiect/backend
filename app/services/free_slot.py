@@ -1,4 +1,4 @@
-# app\services\slot_liber.py
+# app\services\free_slot.py
 from datetime import datetime
 from sqlalchemy import func, distinct
 from sqlalchemy.orm import Session
@@ -11,7 +11,7 @@ from ortools.sat.python import cp_model
 
 from app.services.future_weeks import get_future_weeks_logic
 from app.utils.date_helper import get_calendar_date
-from .slot_alternativ import format_row, parse_weeks_from_info
+from .alternative_slot import format_row, parse_weeks_from_info
 
 def format_reservation_to_schedule(res: Reservation, tag: str):
     """
