@@ -196,7 +196,7 @@ def get_teacher_reservations(db: Session, email: str):
                 if current_time_minutes > end_minutes:
                     status_final = "completed"
 
-        group_names = [f"{g.specialization_short_name} year {g.study_year} {g.group_name}{g.subgroup_index}" for g in r.subgroups]
+        group_names = [f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index}" for g in r.subgroups]
 
         result.append({
             "id": r.id,
@@ -237,7 +237,7 @@ def get_all_reservations_admin(db: Session):
                 if current_time_minutes > end_minutes:
                     status_final = "completed"
 
-        group_names = [f"{g.specialization_short_name} year {g.study_year} {g.group_name}{g.subgroup_index}" for g in r.subgroups]
+        group_names = [f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index}" for g in r.subgroups]
 
         prof_name = "N/A"
         prof_email = "N/A"
@@ -286,7 +286,7 @@ def get_reservations_by_subgroups(db: Session):
                     status_final = "completed"
 
         prof_name = f"{r.main_professor.last_name} {r.main_professor.first_name}" if r.main_professor else "N/A"
-        group_names_display = [f"{g.specialization_short_name} year {g.study_year} {g.group_name}{g.subgroup_index}" for g in r.subgroups]
+        group_names_display = [f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index}" for g in r.subgroups]
 
         reservation_data = {
             "id": r.id,
