@@ -31,7 +31,7 @@ class Faculty(Base):
 class Professor(Base):
     __tablename__ = "professors"
     id = Column(Integer, primary_key=True)
-    llast_name = Column(String)
+    last_name = Column(String)
     first_name = Column(String)
     position_short_name = Column(String)
     phd_short_name = Column(String)

@@ -16,7 +16,7 @@ def get_future_weeks_logic(db: Session):
     
     current_semester = 2  # Assume Semester 2 by default
     sem_1_is_active = False
-    current_status = "Vacation"  # Default status
+    current_status = "Vacanță"  # Default status
     
     # Determine the current semester and check the current active activity
     for entry in all_entries:

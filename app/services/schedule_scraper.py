@@ -43,7 +43,7 @@ async def process_and_save(db: Session, data, source_tag):
 
     # 2. Check if the events list is empty or contains only an empty/invalid object
     if not events or not isinstance(events, list):
-        print(f"ℹEmpty schedule (no events) for {source_tag}")
+        print(f"Empty schedule (no events) for {source_tag}")
         return
 
     # Check if the first element is a valid object (avoiding [[{}], {}])
@@ -182,7 +182,7 @@ async def populate():
             source_tag = f"s{entity.id}"
             url = BASE_URLS["room"].format(id=entity.id)
             
-            print(f"⏳ [{idx}/{total_rooms}] Downloading room schedule: {source_tag}")
+            print(f"[{idx}/{total_rooms}] Downloading room schedule: {source_tag}")
             data = await fetch_json(client, url)
             if data:
                 await process_and_save(db, data, source_tag)

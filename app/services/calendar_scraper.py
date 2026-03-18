@@ -58,38 +58,38 @@ async def get_text_from_url(url: str):
 
 async def process_with_gemini(text: str):
     prompt = f"""
-    Role: Expert in structured data extraction.
-    Task: Analyze the academic calendar and extract activities according to the following strict rules:
+    Rol: Expert în extragerea datelor structurate.
+    Sarcina: Analizează calendarul academic și extrage activitățile conform următoarelor reguli stricte:
+
+    1. PERIOADE DE CURS (Săptămânile 1-14):
+       - Împarte aceste perioade în exact 14 rânduri per semestru.
+       - Folosește numerele 1-14 pentru coloana "week_number".
+       - Format perioadă: yyyy.mm.dd-yyyy.mm.dd (ex: 2025.09.29-2025.10.05).
+       - Dacă o săptămână de curs este fragmentată de vacanță, pune ambele intervale pe același rând separate prin ";" (ex: 2025.12.22-2025.12.24;2026.01.08-2026.01.11).
+
+    2. ALTE ACTIVITĂȚI (Sesiuni, Restanțe, Reexaminări, Vacanțe):
+       - NU le împărți pe săptămâni. Extrage-le ca UN SINGUR rând per activitate, exact cum apar în site.
+       - Pentru coloana "week_number", continuă numerotarea de la 15 în sus (15, 16, 17...) pentru a păstra cheia primară unică în baza de date.
+       - La începutul Semestrului 2, numerotarea săptămânilor de curs se reia de la 1 la 14, iar activitățile post-semestru continuă de la 15 în sus.
+
+    3. VERIFICARE CALENDARISTICĂ (CRITIC):
+       - Verifică dacă anul vizat este BISECT sau nu. 
+       - În anii NON-BISECȚI (cum este 2026), februarie are STRICT 28 de zile. NU genera data de 2026.02.29.
+       - Asigură-te că trecerea de la o lună la alta este corectă (ex: după 30 sau 31 ale lunii urmează data de 01 a lunii următoare).
+       - Toate datele generate trebuie să fie VALIDE matematic.
+
+    4. FORMAT DATE: yyyy.mm.dd (Exemplu: 2026.01.19-2026.02.08).
+
+    5. ANUL UNIVERISTAR: "yyyy-yyyy"
     
-    1. COURSE PERIODS (Weeks 1-14):
-       - Split these periods into exactly 14 rows per semester.
-       - Use numbers 1-14 for the "week_number" column.
-       - Period format: yyyy.mm.dd-yyyy.mm.dd (e.g., 2025.09.29-2025.10.05).
-       - If a course week is fragmented by a holiday, put both intervals on the same row separated by ";" (e.g., 2025.12.22-2025.12.24;2026.01.08-2026.01.11).
+    6. OBSERVATII:
+       - Scrie tipul activității: "Curs", "Sesiune Examene", "Sesiune Restante", "Vacanta", "Reexaminari".
+       - Adaugă zilele libere legale dacă există DOAR în acel interval, separate prin ";" (ex: "Sesiune Examene; 2026.01.24").
 
-    2. OTHER ACTIVITIES (Exam Sessions, Re-takes, Re-examinations, Vacations):
-       - DO NOT split these into weeks. Extract them as a SINGLE row per activity, exactly as they appear on the site.
-       - For the "week_number" column, continue numbering from 15 upwards (15, 16, 17...) to keep the primary key unique in the database.
-       - At the start of Semester 2, course week numbering resets from 1 to 14, while post-semester activities continue from 15 upwards.
+    7. ATENȚIE: Pentru extragerea datelor structurate folosește DOAR textul sursă.
 
-    3. CALENDAR VERIFICATION (CRITICAL):
-       - Check if the targeted year is a LEAP year or not. 
-       - In NON-LEAP years (such as 2026), February has STRICTLY 28 days. DO NOT generate the date 2026.02.29.
-       - Ensure the transition from one month to the next is correct (e.g., after the 30th or 31st of the month comes the 01st of the following month).
-       - All generated dates must be mathematically VALID.
-
-    4. DATE FORMAT: yyyy.mm.dd (Example: 2026.01.19-2026.02.08).
-
-    5. ACADEMIC YEAR: "yyyy-yyyy"
-
-    6. NOTES:
-       - Write the activity type: "Course", "Exam Session", "Re-take Session", "Vacation", "Re-examinations".
-       - Add legal public holidays if they exist ONLY in that interval, separated by ";" (e.g., "Exam Session; 2026.01.24").
-
-    7. ATTENTION: Use ONLY the source text for structured data extraction.
-
-    Output Format: JSON (list of objects) without explanatory text.
-    JSON Structure:
+    Format Ieșire: JSON (listă de obiecte) fără text explicativ.
+    Structura JSON:
     {{
         "academic_year": "yyyy-yyyy",
         "semester": int,
@@ -98,7 +98,7 @@ async def process_with_gemini(text: str):
         "notes": "string"
     }}
 
-    Source text:
+    Text sursă:
     {text}
     """
     

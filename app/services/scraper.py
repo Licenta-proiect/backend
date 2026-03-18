@@ -69,7 +69,7 @@ async def populate():
         fac_map = {clean_val(f.long_name): f.id for f in db.query(Faculty).all()}
 
         # 2. ROOMS
-        print("📥 Downloading rooms...")
+        print("Downloading rooms...")
         rooms_json = await fetch_data(URLS["rooms"])
         for r in rooms_json:
             if r["id"] == "0": continue
@@ -133,7 +133,7 @@ async def populate():
                 ))
 
         # --- 4. SUBGROUPS with Foreign Key protection ---
-        print("📥 Downloading subgroups...")
+        print("Downloading subgroups...")
 
         # Delete all existing records before population
         try:
