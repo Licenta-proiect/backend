@@ -1,36 +1,36 @@
-# app\routers\rezervare.py
+# app\routers\reservation.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.schemas.user import RezervareSlotRequest, SlotLiberRequest, AnulareRezervareRequest
+from app.schemas.user import SlotReservationRequest, FreeSlotRequest, ReservationCancellationRequest
 from app.models.models import User
 from app.services.auth import get_current_user
 from app.services.reservation import create_slot_reservation, cancel_reservation
-from app.services.slot_liber import get_data, find_free_slots_cp_sat, group_slots_for_ui
+from app.services.slot_liber import get_schedule_and_reservation_data, find_free_slots_cp_sat, group_slots_for_ui
 from app.services.future_weeks import get_future_weeks_logic
 
-router = APIRouter(prefix="/rezervari", tags=["Rezervări"])
+router = APIRouter(prefix="/reservations", tags=["Reservations"])
 
-@router.post("/cauta-libere")
-def cauta_sloturi_libere(req: SlotLiberRequest, db: Session = Depends(get_db)):
+@router.post("/search-free")
+def search_free_slots(req: FreeSlotRequest, db: Session = Depends(get_db)):
     """
-    Returnează intervalele libere pentru o materie, un set de grupe și săli,
-    verificând atât orarul oficial cât și rezervările existente.
+    Returns free time intervals for a subject, a set of groups, and rooms,
+    checking both the official schedule and existing ad-hoc reservations.
     """
-    # Obținem contextul academic curent (semestru, săptămâni rămase)
+    # Obtain current academic context (semester, remaining weeks)
     current_semester, active_weeks, _, _ = get_future_weeks_logic(db)
 
-    # Extragem datele de blocaj (Orar + Rezervări)
-    data_result = get_data(db, req, current_semester)
+    # Extract blocking data (Official Schedule + Ad-hoc Reservations)
+    data_result = get_schedule_and_reservation_data(db, req, current_semester)
     
     if "error" in data_result:
         raise HTTPException(status_code=400, detail=data_result["error"])
     if "info" in data_result:
         return {"info": data_result["info"], "slots": {}}
 
-    # Filtrăm săptămânile target (doar cele viitoare și valide academic)
+    # Filter target weeks (only future and academically valid ones)
     max_w = data_result.get("max_week_limit", 14)
-    target_weeks = req.saptamani if req.saptamani else active_weeks
+    target_weeks = req.weeks if req.weeks else active_weeks
     
     filtered_weeks = [
         w for w in target_weeks 
@@ -40,82 +40,82 @@ def cauta_sloturi_libere(req: SlotLiberRequest, db: Session = Depends(get_db)):
     if not filtered_weeks:
         return {"info": "Nicio săptămână selectată nu este validă sau viitoare.", "slots": {}}
 
-    # Rulăm Solver-ul CP-SAT
-    durata_min = req.durata * 60 # Convertim orele primite în minute
+    # Run the CP-SAT Solver
+    duration_min = req.duration * 60 # Convert received hours to minutes
     
     free_slots_raw = find_free_slots_cp_sat(
         db=db,
         constraints=data_result,
-        sali_ids=req.sali_ids,
-        duration_minutes=durata_min,
-        target_day=req.zi,
+        room_ids=req.room_ids,
+        duration_minutes=duration_min,
+        target_day=req.day,
         active_weeks=filtered_weeks
     )
 
-    # Formatăm pentru UI (grupare pe săptămâni și zile)
+    # Format for UI (grouping by weeks and days)
     ui_report = group_slots_for_ui(db, free_slots_raw, current_semester)
 
     return {
         "search_context": {
             "email": req.email,
-            "materie": req.materie,
-            "tipActivitate": req.tip_activitate,
-            "grupeIds": req.grupe_ids,
-            "durata": req.durata,
-            "numarPersoane": req.numar_persoane or 0
+            "subject": req.subject,
+            "activityType": req.activity_type,
+            "groupIds": req.group_ids,
+            "duration": req.duration,
+            "numberOfPeople": req.number_of_people or 0
         },
         "active_weeks": filtered_weeks,
         "slots": ui_report
     }
 
-@router.post("/confirma-rezervare")
-def rezervare_slot_liber(
-    req: RezervareSlotRequest, 
+@router.post("/confirm-reservation")
+def reserve_free_slot(
+    req: SlotReservationRequest, 
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # Verifică dacă user-ul este logat
+    current_user: User = Depends(get_current_user) # Verify if user is logged in
 ):
     """
-    Salvează rezervarea aleasă de utilizator în baza de date.
-    Verifică dacă email-ul din cerere coincide cu cel al utilizatorului logat.
+    Saves the user's chosen reservation in the database.
+    Verifies if the email in the request matches the logged-in user's email.
     """
 
-    # Verificăm dacă profesorul logat încearcă să facă 
-    # o rezervare pentru propriul său email, nu pentru al altcuiva.
+    # Ensure the logged-in professor is creating a 
+    # reservation for their own email, not someone else's.
     if current_user.email != req.email:
         raise HTTPException(
             status_code=403, 
             detail="Nu aveți permisiunea de a crea o rezervare pentru alt profesor."
         )
 
-    rezultat = create_slot_reservation(db, req)
+    result = create_slot_reservation(db, req)
     
-    if "error" in rezultat:
-        raise HTTPException(status_code=400, detail=rezultat["error"])
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
     
-    return rezultat
+    return result
 
-@router.post("/anuleaza-rezervare")
-def anuleaza_rezervare(
-    req: AnulareRezervareRequest, 
+@router.post("/cancel-reservation")
+def cancel_existing_reservation(
+    req: ReservationCancellationRequest, 
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Anulează o rezervare existentă.
-    Verifică dacă utilizatorul logat este proprietarul rezervării.
+    Cancels an existing reservation.
+    Verifies if the logged-in user is the owner of the reservation.
     """
     
-    # Verificăm identitatea (token-ul trebuie să coincidă cu email-ul din request)
+    # Verify identity (token must match the email in the request)
     if current_user.email != req.email:
         raise HTTPException(
             status_code=403, 
             detail="Puteți anula doar propriile rezervări."
         )
 
-    # Apelăm serviciul de anulare
-    rezultat = cancel_reservation(db, req)
+    # Call the cancellation service
+    result = cancel_reservation(db, req)
     
-    if "error" in rezultat:
-        raise HTTPException(status_code=400, detail=rezultat["error"])
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
     
-    return rezultat
+    return result
