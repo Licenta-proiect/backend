@@ -1,205 +1,204 @@
-# app\routers\profesori.py
+# app\routers\professors.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.models.models import Profesor, Orar, Subgrupa, Sala, User
+from app.models.models import Professor, Schedule, Subgroup, Room, User
 from app.services.auth import get_current_user
 from app.services.reservation import get_teacher_reservations
 
-# Inițializezi router-ul
-router = APIRouter(prefix="/profesor", tags=["Profesori"])
+# Initialize the router
+router = APIRouter(prefix="/professor", tags=["Professors"])
 
-@router.get("/materii")
-async def get_profesor_materii(email: str, db: Session = Depends(get_db)):
+@router.get("/subjects")
+async def get_professor_subjects(email: str, db: Session = Depends(get_db)):
     """
-    Returnează lista unică de materii predate de profesor doar grupelor 
-    de la facultatea FIESC.
+    Returns the unique list of subjects taught by the professor 
+    only to subgroups from the FIESC faculty.
     """
-    # 1. Identificăm profesorul pentru a-i lua ID-ul
-    profesor = db.query(Profesor).filter(Profesor.emailAddress == email).first()
+    # 1. Identify the professor to get their ID
+    professor = db.query(Professor).filter(Professor.email_address == email).first()
     
-    if not profesor:
+    if not professor:
         raise HTTPException(
             status_code=404, 
             detail="Profesorul cu acest email nu a fost găsit în baza de date."
         )
 
-    # 2. Căutăm în Orar toate materiile (topicLongName) asociate acestui profesor,
-    # dar filtrăm doar rândurile care aparțin grupelor (idURL începe cu 'g')
-    # Această filtrare asigură că vezi doar cursurile predate facultății tale.
-    materii_query = db.query(Orar.topicLongName).filter(
-        Orar.teacherID == profesor.id,
-        Orar.idURL.like('g%')
+    # 2. Search the Schedule for all subjects (topic_long_name) associated with this professor,
+    # but filter only rows belonging to groups (id_url starts with 'g')
+    # This filtering ensures you only see courses taught to your faculty.
+    subjects_query = db.query(Schedule.topic_long_name).filter(
+        Schedule.teacher_id == professor.id,
+        Schedule.id_url.like('g%')
     ).distinct().all()
 
-    # 3. Convertim rezultatul într-o listă unică de string-uri, ordonată alfabetic
-    set_materii = sorted([m[0] for m in materii_query if m[0]])
+    # 3. Convert the result into a unique list of strings, sorted alphabetically
+    subjects_set = sorted([m[0] for m in subjects_query if m[0]])
 
     return {
-        "id": profesor.id,
-        "lastName": profesor.lastName,
-        "firstName": profesor.firstName,
-        "materii": set_materii
+        "id": professor.id,
+        "lastName": professor.last_name,
+        "firstName": professor.first_name,
+        "subjects": subjects_set
     }
 
-@router.get("/grupe")
-async def get_profesor_grupe(email: str, db: Session = Depends(get_db)):
+@router.get("/groups")
+async def get_professor_groups(email: str, db: Session = Depends(get_db)):
     """
-    Identifică grupele la care predă profesorul, doar de la facultatea FIESC.
+    Identifies the groups taught by the professor, limited to the FIESC faculty.
     """
-    # 1. Identificăm profesorul pentru a-i lua ID-ul
-    profesor = db.query(Profesor).filter(Profesor.emailAddress == email).first()
-    if not profesor:
+    # 1. Identify the professor to get their ID
+    professor = db.query(Professor).filter(Professor.email_address == email).first()
+    if not professor:
         raise HTTPException(status_code=404, detail="Profesorul nu a fost găsit.")
 
-    # 2. Căutăm în Orar toate idURL-urile de tip grupă ('g...') unde apare acest profesor
-    # teacherID este salvat pe toate rândurile evenimentului (inclusiv pe cele de grupă)
-    grupe_ids_query = db.query(Orar.idURL).filter(
-        Orar.teacherID == profesor.id,
-        Orar.idURL.like('g%')
+    # 2. Search the Schedule for all group-type id_urls ('g...') where this professor appears
+    # teacher_id is saved on all event rows (including group rows)
+    groups_ids_query = db.query(Schedule.id_url).filter(
+        Schedule.teacher_id == professor.id,
+        Schedule.id_url.like('g%')
     ).distinct().all()
 
-    # 3. Extragem ID-urile numerice din formatul 'gID'
-    ids_set = {int(row[0][1:]) for row in grupe_ids_query if row[0] and len(row[0]) > 1}
+    # 3. Extract numerical IDs from the 'gID' format
+    ids_set = {int(row[0][1:]) for row in groups_ids_query if row[0] and len(row[0]) > 1}
 
     if not ids_set:
         return {
-            "id": profesor.id,
-            "lastName": profesor.lastName,
-            "firstName": profesor.firstName,
-            "grupe": []
+            "id": professor.id,
+            "lastName": professor.last_name,
+            "firstName": professor.first_name,
+            "groups": []
         }
 
-    # 4. Luăm detaliile din Subgrupa și ordonăm direct din query după nume (groupName) și index (subgroupIndex)
-    # Folosim .asc() pentru a asigura ordinea crescătoare
-    grupe_detalii = db.query(Subgrupa).filter(
-        Subgrupa.id.in_(list(ids_set))
+    # 4. Get details from Subgroup and order directly from the query by name (group_name) and index (subgroup_index)
+    groups_details = db.query(Subgroup).filter(
+        Subgroup.id.in_(list(ids_set))
     ).order_by(
-        Subgrupa.groupName.asc(), 
-        Subgrupa.subgroupIndex.asc()
+        Subgroup.group_name.asc(), 
+        Subgroup.subgroup_index.asc()
     ).all()
 
-    # 5. Trimitem lista de obiecte {id, nume}
-    rezultat = [
+    # 5. Send list of objects {id, name}
+    result = [
         {
             "id": g.id,
-            "nume": g.groupName, 
-            "subgroupIndex":g.subgroupIndex if g.subgroupIndex else '',
-            "studyYear": g.studyYear,
-            "specializationShortName": g.specializationShortName
-        } for g in grupe_detalii
+            "name": g.group_name, 
+            "subgroupIndex": g.subgroup_index if g.subgroup_index else '',
+            "studyYear": g.study_year,
+            "specializationShortName": g.specialization_short_name
+        } for g in groups_details
     ]
 
     return {
-        "id": profesor.id,
-        "lastName": profesor.lastName,
-        "firstName": profesor.firstName,
-        "grupe": rezultat
+        "id": professor.id,
+        "lastName": professor.last_name,
+        "firstName": professor.first_name,
+        "groups": result
     }
 
-@router.get("/sali")
-async def get_profesor_sali(email: str, db: Session = Depends(get_db)):
+@router.get("/rooms")
+async def get_professor_rooms(email: str, db: Session = Depends(get_db)):
     """
-    Identifică sălile în care predă profesorul, limitat la grupele de la FIESC.
+    Identifies the rooms where the professor teaches, limited to FIESC groups.
     """
-    # 1. Identificăm profesorul pentru a-i lua ID-ul intern
-    profesor = db.query(Profesor).filter(Profesor.emailAddress == email).first()
-    if not profesor:
+    # 1. Identify the professor to get their internal ID
+    professor = db.query(Professor).filter(Professor.email_address == email).first()
+    if not professor:
         raise HTTPException(status_code=404, detail="Profesorul nu a fost găsit.")
 
-    # 2. Căutăm în Orar toate roomId-urile distincte pentru acest profesor
-    # Folosim idURL.like('g%') pentru a ne asigura că luăm sălile doar de la grupele de la FIESC
-    sali_ids_query = db.query(Orar.roomId).filter(
-        Orar.teacherID == profesor.id,
-        Orar.idURL.like('g%')
+    # 2. Search the Schedule for all distinct room_ids for this professor
+    # Use id_url.like('g%') to ensure we only get rooms from synchronized group schedules
+    rooms_ids_query = db.query(Schedule.room_id).filter(
+        Schedule.teacher_id == professor.id,
+        Schedule.id_url.like('g%')
     ).distinct().all()
 
-    # 3. Extragem ID-urile reale ale sălilor din coloana roomId (filtrând valorile None)
-    ids_set = {row[0] for row in sali_ids_query if row[0] is not None}
+    # 3. Extract real room IDs from the room_id column (filtering None values)
+    ids_set = {row[0] for row in rooms_ids_query if row[0] is not None}
 
     if not ids_set:
         return {
-            "id": profesor.id,
-            "lastName": profesor.lastName,
-            "firstName": profesor.firstName,
-            "sali": []
+            "id": professor.id,
+            "lastName": professor.last_name,
+            "firstName": professor.first_name,
+            "rooms": []
         }
 
-    # 4. Luăm detaliile din tabelul Sala și le ordonăm alfabetic după nume
-    sali_detalii = db.query(Sala).filter(
-        Sala.id.in_(list(ids_set))
-    ).order_by(Sala.name.asc()).all()
+    # 4. Get details from the Room table and order them alphabetically by name
+    rooms_details = db.query(Room).filter(
+        Room.id.in_(list(ids_set))
+    ).order_by(Room.name.asc()).all()
 
-    # 5. Trimitem lista de obiecte conform modelului Sala
-    rezultat = [
+    # 5. Send list of objects according to the Room model
+    result = [
         {
             "id": s.id,
-            "nume": s.name,
-            "shortName": s.shortName,
-            "buildingName": s.buildingName
-        } for s in sali_detalii
+            "name": s.name,
+            "shortName": s.short_name,
+            "buildingName": s.building_name
+        } for s in rooms_details
     ]
 
     return {
-        "id": profesor.id,
-        "lastName": profesor.lastName,
-        "firstName": profesor.firstName,
-        "sali": rezultat
+        "id": professor.id,
+        "lastName": professor.last_name,
+        "firstName": professor.first_name,
+        "rooms": result
     }
 
-@router.get("/grupe-materie")
-async def get_grupe_prin_materie(
+@router.get("/groups-by-subject")
+async def get_groups_by_subject(
     email: str, 
-    materie: str, 
-    tip: str = None, 
+    subject: str, 
+    activity_type: str = None, 
     db: Session = Depends(get_db)
 ):
     """
-    Identifică grupele la care predă un profesor o materie.
-    Dacă tipul este 'Curs', caută și grupele de la specializări diferite (comasate).
+    Identifies the groups a professor teaches a specific subject to.
+    If the type is 'Course', it also searches for groups from different specializations (merged classes).
     """
-    # 1. Identificăm profesorul
-    profesor = db.query(Profesor).filter(Profesor.emailAddress == email).first()
-    if not profesor:
+    # 1. Identify the professor
+    professor = db.query(Professor).filter(Professor.email_address == email).first()
+    if not professor:
         raise HTTPException(status_code=404, detail="Profesorul nu a fost găsit.")
 
-    # 2. Obținem setul de date "ancoră" (grupele care au materia cu numele exact)
-    # Căutăm înregistrările de tip grupă ('g%')
-    ancora_query = db.query(Orar).filter(
-        Orar.teacherID == profesor.id,
-        Orar.idURL.like('g%'),
-        Orar.topicLongName == materie
+    # 2. Obtain the "anchor" data set (groups that have the subject with the exact name)
+    # Search group-type records ('g%')
+    anchor_query = db.query(Schedule).filter(
+        Schedule.teacher_id == professor.id,
+        Schedule.id_url.like('g%'),
+        Schedule.topic_long_name == subject
     )
     
-    if tip:
-        ancora_query = ancora_query.filter(Orar.typeLongName == tip)
+    if activity_type:
+        anchor_query = anchor_query.filter(Schedule.type_long_name == activity_type)
         
-    ancora_rows = ancora_query.all()
+    anchor_rows = anchor_query.all()
     
-    # ID-urile grupelor inițiale și numele lor scurte pentru cross-check
-    ids_set = {int(row.idURL[1:]) for row in ancora_rows if row.idURL and len(row.idURL) > 1}
-
-    # 3. Logica pentru CURSURI COMASATE (Bazată pe timp și spațiu)
-    if tip and "curs" in tip.lower() and ancora_rows:
-        for row in ancora_rows:
-            # Căutăm evenimente simultane: același profesor, aceeași sală, același interval orar
-            # Chiar dacă materia are nume ușor diferit (ex: "Matematici Speciale" vs "Analiză")
-            potentiale_comasate = db.query(Orar).filter(
-                Orar.teacherID == profesor.id,
-                Orar.idURL.like('g%'),
-                Orar.weekDay == row.weekDay,
-                Orar.startHour == row.startHour,
-                Orar.duration == row.duration,
-                Orar.roomId == row.roomId,
-                Orar.typeLongName == row.typeLongName, # Tot Curs
-                Orar.topicLongName != materie    # Materie cu nume diferit (sau alias)
+    # Initial group IDs and their short names for cross-checking
+    ids_set = {int(row.id_url[1:]) for row in anchor_rows if row.id_url and len(row.id_url) > 1}
+    
+    # 3. Logic for MERGED COURSES (Based on time and space)
+    if activity_type and "curs" in activity_type.lower() and anchor_rows:
+        for row in anchor_rows:
+            # Search for simultaneous events: same professor, same room, same time interval
+            # Even if the subject has a slightly different name (e.g., "Special Mathematics" vs "Analysis")
+            potential_merged = db.query(Schedule).filter(
+                Schedule.teacher_id == professor.id,
+                Schedule.id_url.like('g%'),
+                Schedule.week_day == row.week_day,
+                Schedule.start_hour == row.start_hour,
+                Schedule.duration == row.duration,
+                Schedule.room_id == row.room_id,
+                Schedule.type_long_name == row.type_long_name, # Also a Course
+                Schedule.topic_long_name != subject    # Subject with a different name (or alias)
             ).all()
 
-            for p in potentiale_comasate:
+            for p in potential_merged:
                 try:
-                    p_id = int(p.idURL[1:])
-                    # Dacă am găsit un alt curs simultan, îl adăugăm automat.
-                    # Coincidența de Sala + Ora + Profesor este dovada de comasare în orar.
+                    p_id = int(p.id_url[1:])
+                    # If we found another simultaneous course, add it automatically.
+                    # Room + Time + Professor coincidence is proof of merging in the schedule.
                     if p_id not in ids_set: 
                         ids_set.add(p_id)
                 except (ValueError, IndexError):
@@ -207,102 +206,102 @@ async def get_grupe_prin_materie(
 
     if not ids_set:
         return {
-            "id": profesor.id,
-            "lastName": profesor.lastName,
-            "firstName": profesor.firstName,
-            "materie": materie,
-            "grupe": [],
-            "tip_selectat": tip,
+            "id": professor.id,
+            "lastName": professor.last_name,
+            "firstName": professor.first_name,
+            "subject": subject,
+            "groups": [],
+            "selected_type": activity_type,
         }
 
-    # 4. Obținem detaliile complete pentru toate ID-urile colectate
-    grupe_detalii = db.query(Subgrupa).filter(
-        Subgrupa.id.in_(list(ids_set))
+    # 4. Get full details for all collected IDs
+    groups_details = db.query(Subgroup).filter(
+        Subgroup.id.in_(list(ids_set))
     ).order_by(
-        Subgrupa.groupName.asc(), 
-        Subgrupa.subgroupIndex.asc()
+        Subgroup.group_name.asc(), 
+        Subgroup.subgroup_index.asc()
     ).all()
 
-    rezultat = [
+    result = [
         {
             "id": g.id,
-            "nume": g.groupName, 
-            "subgroupIndex": g.subgroupIndex if g.subgroupIndex else '',
-            "studyYear": g.studyYear,
-            "specializationShortName": g.specializationShortName
-        } for g in grupe_detalii
+            "name": g.group_name, 
+            "subgroupIndex": g.subgroup_index if g.subgroup_index else '',
+            "studyYear": g.study_year,
+            "specializationShortName": g.specialization_short_name
+        } for g in groups_details
     ]
 
     return {
-        "id": profesor.id,
-        "lastName": profesor.lastName,
-        "firstName": profesor.firstName,
-        "materie": materie,
-        "tip_selectat": tip,
-        "grupe": rezultat
+        "id": professor.id,
+        "lastName": professor.last_name,
+        "firstName": professor.first_name,
+        "subject": subject,
+        "selected_type": activity_type,
+        "groups": result
     }
 
-@router.get("/sali-materie")
-async def get_sali_prin_materie(email: str, materie: str, db: Session = Depends(get_db)):
+@router.get("/rooms-by-subject")
+async def get_rooms_by_subject(email: str, subject: str, db: Session = Depends(get_db)):
     """
-    Identifică sălile unde un anumit profesor predă o anumită materie,
-    limitat la grupele de la FIESC.
+    Identifies the rooms where a specific professor teaches a specific subject,
+    limited to FIESC groups.
     """
-    # 1. Identificăm profesorul după email
-    profesor = db.query(Profesor).filter(Profesor.emailAddress == email).first()
-    if not profesor:
+    # 1. Identify the professor by email
+    professor = db.query(Professor).filter(Professor.email_address == email).first()
+    if not professor:
         raise HTTPException(status_code=404, detail="Profesorul nu a fost găsit.")
 
-    # 2. Căutăm în Orar toate roomId-urile distincte unde profesorul predă materia respectivă
-    # Folosim idURL.like('g%') pentru a limita rezultatele la orarul grupelor sincronizate
-    sali_ids_query = db.query(Orar.roomId).filter(
-        Orar.teacherID == profesor.id,
-        Orar.idURL.like('g%'),
-        Orar.topicLongName == materie
+    # 2. Search Schedule for all distinct room_ids where the professor teaches that subject
+    # Use id_url.like('g%') to limit results to synchronized group schedules
+    rooms_ids_query = db.query(Schedule.room_id).filter(
+        Schedule.teacher_id == professor.id,
+        Schedule.id_url.like('g%'),
+        Schedule.topic_long_name == subject
     ).distinct().all()
 
-    # 3. Extragem ID-urile numerice ale sălilor (filtrând valorile nule)
-    ids_set = {row[0] for row in sali_ids_query if row[0] is not None}
+    # 3. Extract numerical room IDs (filtering null values)
+    ids_set = {row[0] for row in rooms_ids_query if row[0] is not None}
 
     if not ids_set:
         return {
-            "id": profesor.id,
-            "lastName": profesor.lastName,
-            "firstName": profesor.firstName,
-            "materie": materie,
-            "sali": []
+            "id": professor.id,
+            "lastName": professor.last_name,
+            "firstName": professor.first_name,
+            "subject": subject,
+            "rooms": []
         }
 
-    # 4. Luăm detaliile din tabelul Sala și le ordonăm alfabetic după nume
-    sali_detalii = db.query(Sala).filter(
-        Sala.id.in_(list(ids_set))
-    ).order_by(Sala.name.asc()).all()
+    # 4. Get details from the Room table and order them alphabetically by name
+    rooms_details = db.query(Room).filter(
+        Room.id.in_(list(ids_set))
+    ).order_by(Room.name.asc()).all()
 
-    # 5. Formatăm rezultatul similar cu ruta /sali
-    rezultat = [
+    # 5. Format the result similar to the /rooms route
+    result = [
         {
             "id": s.id,
-            "nume": s.name,
-            "shortName": s.shortName,
-            "buildingName": s.buildingName
-        } for s in sali_detalii
+            "name": s.name,
+            "shortName": s.short_name,
+            "buildingName": s.building_name
+        } for s in rooms_details
     ]
 
     return {
-        "id": profesor.id,
-        "lastName": profesor.lastName,
-        "firstName": profesor.firstName,
-        "materie": materie,
-        "sali": rezultat
+        "id": professor.id,
+        "lastName": professor.last_name,
+        "firstName": professor.first_name,
+        "subject": subject,
+        "rooms": result
     }
 
-@router.get("/rezervari")
-def listare_rezervari_profesor(
+@router.get("/reservations")
+def list_professor_reservations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Returnează lista tuturor rezervărilor făcute de profesorul logat,
-    cu statusul actualizat în funcție de timp.
+    Returns the list of all reservations made by the logged-in professor,
+    with statuses updated based on time.
     """
     return get_teacher_reservations(db, current_user.email)
