@@ -217,9 +217,9 @@ def get_schedule_and_reservation_data(db: Session, req: FreeSlotRequest, current
         room_blocks = [b for b in room_blocks if int(b['idURL'][1:]) in valid_room_ids]
 
     return {
-        "profesor": prof_blocks,
-        "subgrupe": group_blocks,
-        "sali": room_blocks,
+        "professor": prof_blocks,
+        "subgroups": group_blocks,
+        "rooms": room_blocks,
         "max_week_limit": max_week_limit
     }
 
@@ -235,7 +235,7 @@ def find_free_slots_cp_sat(db: Session, constraints: dict, room_ids: List[int], 
         for day in days_to_check:
             # 1. Create a signature for cache
             current_blocks_raw = []
-            for category in ['profesor', 'subgrupe', 'sali']:
+            for category in ['professor', 'subgroups', 'rooms']:
                 for c in constraints[category]:
                     if c['weekDay'] == day:
                         weeks_allowed = parse_weeks_from_info(c['otherInfo'], c['parity'])
@@ -258,10 +258,10 @@ def find_free_slots_cp_sat(db: Session, constraints: dict, room_ids: List[int], 
                 model.Add(end_var == start_var + duration_minutes)
 
                 block_list = []
-                for category in ['profesor', 'subgrupe', 'sali']:
+                for category in ['professor', 'subgroups', 'rooms']:
                     for c in constraints[category]:
                         if c['weekDay'] == day:
-                            if category == 'sali' and c['idURL'] != f"s{rid}":
+                            if category == 'rooms' and c['idURL'] != f"s{rid}":
                                 continue
                             weeks_allowed = parse_weeks_from_info(c['otherInfo'], c['parity'])
                             if week in weeks_allowed:
@@ -286,7 +286,7 @@ def find_free_slots_cp_sat(db: Session, constraints: dict, room_ids: List[int], 
                         day_results.append({
                             "start": f_start,
                             "end": f_end,
-                            "sala_id": rid
+                            "room_id": rid
                         })
                         current_search_start = f_start + 60
                     else: break
@@ -324,17 +324,17 @@ def group_slots_for_ui(db: Session, free_slots_raw: dict, current_semester: int)
             day_slots = []
             for s in slots:
                 day_slots.append({
-                    "sala_id": s['sala_id'],
-                    "ora_start": s['start'] // 60, 
-                    "ora_final": s['end'] // 60,   
+                    "room_id": s['room_id'],
+                    "start_time": s['start'] // 60, 
+                    "end_time": s['end'] // 60,   
                 })
             
             if day_slots:
                 week_data.append({
-                    "zi_index": day_idx,
-                    "zi_nume": day_map.get(day_idx),
-                    "data": slot_date.strftime("%Y-%m-%d"),
-                    "optiuni": day_slots
+                    "day_index": day_idx,
+                    "day_name": day_map.get(day_idx),
+                    "date": slot_date.strftime("%Y-%m-%d"),
+                    "options": day_slots
                 })
         
         if week_data:
