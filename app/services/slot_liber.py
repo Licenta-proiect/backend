@@ -2,8 +2,8 @@
 from datetime import datetime
 from sqlalchemy import func, distinct
 from sqlalchemy.orm import Session
-from app.models.models import Orar, Subgrupa, Profesor, Sala, Rezervare
-from app.schemas.user import SlotLiberRequest
+from app.models.models import Schedule, Subgroup, Professor, Room, Reservation
+from app.schemas.user import FreeSlotRequest
 from app.utils.time_helper import get_now
 from typing import List
 import hashlib
@@ -13,294 +13,255 @@ from app.services.future_weeks import get_future_weeks_logic
 from app.utils.date_helper import get_calendar_date
 from .slot_alternativ import format_row, parse_weeks_from_info
 
-def format_rezervare_to_orar(rez: Rezervare, tag: str):
+def format_reservation_to_schedule(res: Reservation, tag: str):
     """
-    Transformă un obiect Rezervare într-un dicționar compatibil cu format_row,
-    pentru a fi procesat unitar de solver.
+    Transforms a Reservation object into a dictionary compatible with format_row,
+    to be processed uniformly by the solver.
     """
     return {
         "idURL": tag,
-        "weekDay": rez.zi,
-        "startHour": rez.oraInceput,
-        "duration": rez.durata,
-        "parity": 0,  # Rezervările ad-hoc sunt specifice unei săptămâni
-        "otherInfo": f"S{rez.saptamana}" 
+        "weekDay": res.day_of_week,
+        "startHour": res.start_time_minutes,
+        "duration": res.duration,
+        "parity": 0,  # Ad-hoc reservations are specific to a single week
+        "otherInfo": f"S{res.week_number}" 
     }
 
-def get_profesor_id(db: Session, email: str):
-    '''Identifică profesorul în baza de date folosind adresa de email.'''
-    profesor = db.query(Profesor).filter(Profesor.emailAddress == email).first()
+def get_professor_id_by_email(db: Session, email: str):
+    '''Identifies the professor in the database using the email address.'''
+    professor = db.query(Professor).filter(Professor.email_address == email).first()
     
-    if not profesor:
+    if not professor:
         return None
     
-    return profesor.id
+    return professor.id
 
-def get_max_week_for_groups(db: Session, id_grupe: List[int], current_semester: int) -> int:
+def get_max_week_for_groups(db: Session, group_ids: List[int], current_semester: int) -> int:
     """
-    Determină săptămâna maximă (10 sau 14) în funcție de grupele selectate.
-    - Întoarce 10 dacă TOATE grupele selectate sunt în an terminal în Semestrul 2.
-    - Pentru Licență (type 1), anul terminal trebuie să fie cel puțin 3.
+    Determines the maximum week (10 or 14) based on the selected groups.
+    - Returns 10 if ALL selected groups are in their terminal year during Semester 2.
     """
-    # Dacă suntem în Semestrul 1, oricum toată lumea are 14 săptămâni
     if current_semester == 1:
         return 14
 
-    grupe = db.query(Subgrupa).filter(Subgrupa.id.in_(id_grupe)).all()
-    if not grupe:
+    groups = db.query(Subgroup).filter(Subgroup.id.in_(group_ids)).all()
+    if not groups:
         return 14
 
-    # Presupunem inițial că toate sunt terminale și căutăm contra-exemple
     all_terminal = True
     
-    for g in grupe:
+    for g in groups:
         is_this_group_terminal = False
 
-        # Căutăm anul maxim pentru specializarea acestei grupe (și același tip)
-        max_year = db.query(func.max(Subgrupa.studyYear)).filter(
-            Subgrupa.specializationShortName == g.specializationShortName,
-            Subgrupa.faculty_id == g.faculty_id,
-            Subgrupa.type == g.type
+        # Find max year for this specialization and type
+        max_year = db.query(func.max(Subgroup.study_year)).filter(
+            Subgroup.specialization_short_name == g.specialization_short_name,
+            Subgroup.faculty_id == g.faculty_id,
+            Subgroup.type == g.type
         ).scalar()
 
-        # Verificare Licență (type 1): An terminal (max_year) dar minim anul 3
-        if g.type == 1:
-            if g.studyYear == max_year and g.studyYear >= 3:
+        # License (type "1"): Terminal year (max_year) but at least year 3
+        if g.type == "1":
+            if g.study_year == max_year and g.study_year >= 3:
                 is_this_group_terminal = True
-        
-        # Verificare Master sau alte tipuri: Doar să fie anul maxim
+        # Master or others: Just needs to be the max year
         else:
-            if g.studyYear == max_year:
+            if g.study_year == max_year:
                 is_this_group_terminal = True
 
-        # Dacă am găsit o singură grupă care NU este terminală, invalidăm tot grupul
         if not is_this_group_terminal:
             all_terminal = False
             break 
             
     return 10 if all_terminal else 14
 
-def valideaza_configuratie_grupe(id_grupe: List[int], tip_activitate: str):
+def validate_group_configuration(group_ids: List[int], activity_type: str):
     """
-    Validează dacă numărul de grupe selectate este permis pentru tipul de activitate.
+    Validates if the number of selected groups is allowed for the activity type.
     """
-    tip = tip_activitate.lower()
-    numar_grupe = len(id_grupe)
+    a_type = activity_type.lower()
+    num_groups = len(group_ids)
 
-    if tip in ["laborator", "proiect"] and numar_grupe > 1:
+    if a_type in ["laborator", "proiect"] and num_groups > 1:
         return {
-            "info": f"Pentru activități de tip {tip_activitate}, se poate selecta o singură grupă."
+            "info": f"Pentru activități de tip {activity_type}, se poate selecta o singură grupă."
         }
     
-    if tip == "seminar" and numar_grupe > 2:
+    if a_type == "seminar" and num_groups > 2:
         return {
             "info": "Pentru activități de tip seminar, se pot selecta maxim 2 grupe."
         }
     
     return None
 
-def verifica_existenta_materie(db: Session, id_profesor: int, id_grupe: List[int], materie: str, tip_materie: str) -> bool:
+def check_subject_existence(db: Session, professor_id: int, group_ids: List[int], subject: str, activity_type: str) -> bool:
     """
-    Verifică existența materiei în orar.
-    - Pentru CURS: Verifică dacă materia există la profesor, iar grupele au acest profesor 
-      la acest tip de activitate (permite variații de nume între specializări).
-    - Pentru ALTEL (Lab/Sem): Verifică potrivirea strictă profesor-materie-grupă.
+    Checks if the subject exists in the schedule for both professor and groups.
     """
-    tip_lower = tip_materie.lower()
+    type_lower = activity_type.lower()
     
-    # 1. Validare inițială: Materia trebuie să existe obligatoriu în orarul profesorului
-    prof_record = db.query(Orar).filter(
-        Orar.idURL == f"p{id_profesor}",
-        Orar.teacherID == id_profesor,
-        func.lower(Orar.topicLongName) == func.lower(materie),
-        func.lower(Orar.typeLongName) == func.lower(tip_materie)
+    # 1. Subject must exist in the professor's schedule
+    prof_record = db.query(Schedule).filter(
+        Schedule.id_url == f"p{professor_id}",
+        Schedule.teacher_id == professor_id,
+        func.lower(Schedule.topic_long_name) == func.lower(subject),
+        func.lower(Schedule.type_long_name) == func.lower(activity_type)
     ).all()
 
     if not prof_record:
         return False
 
-    # 2. Validare pentru fiecare grupă în parte
-    for gid in id_grupe:
-        tag_grupa = f"g{gid}"
-        gasit_pentru_grupa = False
+    # 2. Validation for each group
+    for gid in group_ids:
+        group_tag = f"g{gid}"
+        found_for_group = False
         
-        if "curs" in tip_lower:
-            # Căutăm dacă grupa are un slot simultan cu ORICARE dintre orele profesorului
-            for ancora in prof_record:
-                match_query = db.query(Orar).filter(
-                    Orar.idURL == tag_grupa,
-                    Orar.teacherID == id_profesor,
-                    Orar.weekDay == ancora.weekDay,
-                    Orar.startHour == ancora.startHour,
-                    Orar.duration == ancora.duration,
-                    Orar.roomId == ancora.roomId,
-                    func.lower(Orar.typeLongName) == tip_lower
+        if "curs" in type_lower:
+            for anchor in prof_record:
+                match_query = db.query(Schedule).filter(
+                    Schedule.id_url == group_tag,
+                    Schedule.teacher_id == professor_id,
+                    Schedule.week_day == anchor.week_day,
+                    Schedule.start_hour == anchor.start_hour,
+                    Schedule.duration == anchor.duration,
+                    Schedule.room_id == anchor.room_id,
+                    func.lower(Schedule.type_long_name) == type_lower
                 ).first()
 
                 if match_query:
-                    gasit_pentru_grupa = True
-                    break # Am găsit grupa la una din orele prof-ului, ieșim din bucla ancorelor
+                    found_for_group = True
+                    break
             
-            # Verificarea se face AICI (după ce am verificat toate ancorele pentru această grupă)
-            if not gasit_pentru_grupa:
+            if not found_for_group:
                 return False
         else:
-            # (Lab/Sem/Proiect): Materia și profesorul trebuie să coincidă exact
-            grupa_has_exact_topic = db.query(Orar).filter(
-                Orar.idURL == tag_grupa,
-                Orar.teacherID == id_profesor,
-                func.lower(Orar.topicLongName) == func.lower(materie),
-                func.lower(Orar.typeLongName) == tip_lower
+            # Lab/Sem/Project: Exact match
+            group_has_exact_topic = db.query(Schedule).filter(
+                Schedule.id_url == group_tag,
+                Schedule.teacher_id == professor_id,
+                func.lower(Schedule.topic_long_name) == func.lower(subject),
+                func.lower(Schedule.type_long_name) == type_lower
             ).first()
             
-            if not grupa_has_exact_topic:
+            if not group_has_exact_topic:
                 return False
 
     return True
 
-def get_data(db: Session, req: SlotLiberRequest, current_semester: int):
-    '''Extrage datele din orar ȘI rezervări pentru profesor, subgrupe și săli'''
-    validare = valideaza_configuratie_grupe(req.grupe_ids, req.tip_activitate)
-    if validare:
-        return validare
+def get_schedule_and_reservation_data(db: Session, req: FreeSlotRequest, current_semester: int):
+    '''Extracts data from schedule AND reservations for professor, subgroups, and rooms.'''
+    validation = validate_group_configuration(req.group_ids, req.activity_type)
+    if validation:
+        return validation
     
-    # Preia ID Profesor din email
-    id_prof = get_profesor_id(db, req.email)
-    if not id_prof:
+    prof_id = get_professor_id_by_email(db, req.email)
+    if not prof_id:
         return {"info": f"Profesorul cu email-ul {req.email} nu a fost găsit."}
 
-    # Verifică existența materiei și tipului pentru toți actorii (Prof + Grupe)
-    if not verifica_existenta_materie(db, id_prof, req.grupe_ids, req.materie, req.tip_activitate):
+    if not check_subject_existence(db, prof_id, req.group_ids, req.subject, req.activity_type):
         return {"info": "Materia sau tipul de activitate nu a fost găsit în orarul profesorului sau al grupelor."}
 
-    # Determinăm săptămâna maximă pe baza anului de studiu
-    max_week_limit = get_max_week_for_groups(db, req.grupe_ids, current_semester)
+    max_week_limit = get_max_week_for_groups(db, req.group_ids, current_semester)
 
-    # COLECTARE DATE DIN ORARUL OFICIAL
-    tags_prof = [f"p{id_prof}"]
-    tags_grupe = [f"g{gid}" for gid in req.grupe_ids]
-    tags_sali = [f"s{sid}" for sid in req.sali_ids]
-    all_tags = tags_prof + tags_grupe + tags_sali
+    # COLLECT DATA FROM OFFICIAL SCHEDULE
+    prof_tags = [f"p{prof_id}"]
+    group_tags = [f"g{gid}" for gid in req.group_ids]
+    room_tags = [f"s{rid}" for rid in req.room_ids]
+    all_tags = prof_tags + group_tags + room_tags
 
-    # Extrage toate datele din orar care au idURL în lista construită
-    query_orar = db.query(Orar).filter(Orar.idURL.in_(all_tags))
+    query_schedule = db.query(Schedule).filter(Schedule.id_url.in_(all_tags))
 
-    # Filtrare după ZI (weekDay), dacă este specificată
-    if req.zi is not None:
-        query_orar = query_orar.filter(Orar.weekDay == req.zi)
+    if req.day is not None:
+        query_schedule = query_schedule.filter(Schedule.week_day == req.day)
     
-    orar_data = query_orar.all()
+    schedule_data = query_schedule.all()
 
-    # COLECTARE REZERVĂRI AD-HOC (Conflict prevention)
-    # Căutăm rezervările active care implică profesorul, sălile sau grupele selectate
-    query_rezervari = db.query(Rezervare).filter(
-        Rezervare.status == "rezervat"
-    )
+    # COLLECT AD-HOC RESERVATIONS
+    query_reservations = db.query(Reservation).filter(Reservation.status == "reserved")
 
-    if req.zi is not None:
-        query_rezervari = query_rezervari.filter(Rezervare.zi == req.zi)
+    if req.day is not None:
+        query_reservations = query_reservations.filter(Reservation.day_of_week == req.day)
 
-    # Executăm query-ul pentru rezervări
-    toate_rezervarile = query_rezervari.all()
+    all_reservations = query_reservations.all()
 
-    # FILTRARE ȘI FORMATARE DATE
-    # Pregătim containerele pentru solver
-    prof_blocks = [format_row(r) for r in orar_data if r.idURL in tags_prof]
-    grupe_blocks = [format_row(r) for r in orar_data if r.idURL in tags_grupe]
-    sali_blocks = [format_row(r) for r in orar_data if r.idURL in tags_sali]
+    # FORMATTING FOR SOLVER
+    prof_blocks = [format_row(r) for r in schedule_data if r.id_url in prof_tags]
+    group_blocks = [format_row(r) for r in schedule_data if r.id_url in group_tags]
+    room_blocks = [format_row(r) for r in schedule_data if r.id_url in room_tags]
 
-    # Adăugăm rezervările ad-hoc în containerele corespunzătoare
-    for rez in toate_rezervarile:
-        # Dacă profesorul este implicat în această rezervare
-        if rez.profesor_id == id_prof:
-            prof_blocks.append(format_rezervare_to_orar(rez, f"p{id_prof}"))
+    for res in all_reservations:
+        if res.professor_id == prof_id:
+            prof_blocks.append(format_reservation_to_schedule(res, f"p{prof_id}"))
         
-        # Dacă sala este una din cele căutate
-        if rez.sala_id in req.sali_ids:
-            sali_blocks.append(format_rezervare_to_orar(rez, f"s{rez.sala_id}"))
+        if res.room_id in req.room_ids:
+            room_blocks.append(format_reservation_to_schedule(res, f"s{res.room_id}"))
         
-        # Dacă oricare dintre grupele selectate este implicată în rezervare
-        # Verificăm intersecția dintre grupele rezervării și grupele cerute
-        rez_grupe_ids = [g.id for g in rez.grupe]
-        for gid in req.grupe_ids:
-            if gid in rez_grupe_ids:
-                grupe_blocks.append(format_rezervare_to_orar(rez, f"g{gid}"))
-                break # Evităm duplicatele dacă o rezervare are mai multe din grupele noastre
+        res_group_ids = [g.id for g in res.subgroups]
+        for gid in req.group_ids:
+            if gid in res_group_ids:
+                group_blocks.append(format_reservation_to_schedule(res, f"g{gid}"))
+                break
 
-    # Filtrare SĂLI după Capacitate (dacă numar_persoane e furnizat)
-    # Trebuie să verificăm în tabelul 'sali' dacă id-urile din sali_ids au capacitate >= numar_persoane
-    if req.numar_persoane is not None:
-        # Căutăm sălile care fie au capacitate suficientă, fie au capacitate 0 (nespecificată)
-        sali_valide = db.query(Sala.id).filter(
-            Sala.id.in_(req.sali_ids),
-            (Sala.capacitate >= req.numar_persoane) | (Sala.capacitate == 0)
+    # Filter ROOMS by Capacity
+    if req.number_of_people:
+        valid_rooms = db.query(Room.id).filter(
+            Room.id.in_(req.room_ids),
+            (Room.capacity >= req.number_of_people) | (Room.capacity == 0)
         ).all()
         
-        valid_sala_ids = [s[0] for s in sali_valide]
+        valid_room_ids = [r[0] for r in valid_rooms]
         
-        # Dacă nicio sală nu are capacitatea necesară, returnăm eroare
-        if not valid_sala_ids:
-            return {"error": f"Nicio sală selectată nu are capacitatea minimă de {req.numar_persoane} locuri."}
+        if not valid_room_ids:
+            return {"error": f"Nicio sală selectată nu are capacitatea minimă de {req.number_of_people} locuri."}
         
-        # Păstrăm doar blocajele pentru sălile care au capacitate suficientă
-        sali_blocks = [b for b in sali_blocks if int(b['idURL'][1:]) in valid_sala_ids]
-    
+        room_blocks = [b for b in room_blocks if int(b['idURL'][1:]) in valid_room_ids]
+
     return {
         "profesor": prof_blocks,
-        "subgrupe": grupe_blocks,
-        "sali": sali_blocks,
+        "subgrupe": group_blocks,
+        "sali": room_blocks,
         "max_week_limit": max_week_limit
     }
 
-def find_free_slots_cp_sat(db: Session, constraints: dict, sali_ids: List[int], duration_minutes: int, target_day: int, active_weeks: List[int]):
+def find_free_slots_cp_sat(db: Session, constraints: dict, room_ids: List[int], duration_minutes: int, target_day: int, active_weeks: List[int]):
     START_DAY, END_DAY = 8 * 60, 21 * 60
     free_schedule = {w: {d: [] for d in range(1, 7)} for w in active_weeks}
-    nume_sali = {s.id: s.name for s in db.query(Sala).filter(Sala.id.in_(sali_ids)).all()}
     
-    # Cache pentru a nu rula solverul pentru configuratii identice de blocaje
-    # { "semnatura_blocaje": { day: [slots] } }
     solver_cache = {}
 
     for week in active_weeks:
-        zile = [target_day] if target_day is not None else range(1, 7)
+        days_to_check = [target_day] if target_day is not None else range(1, 7)
         
-        for day in zile:
-            # 1. Cream o "semnatura" a blocajelor pentru aceasta saptamana si zi
-            # Luam toate ID-urile si orele blocajelor care pica in aceasta saptamana
+        for day in days_to_check:
+            # 1. Create a signature for cache
             current_blocks_raw = []
-            for cat in ['profesor', 'subgrupe', 'sali']:
-                for c in constraints[cat]:
+            for category in ['profesor', 'subgrupe', 'sali']:
+                for c in constraints[category]:
                     if c['weekDay'] == day:
                         weeks_allowed = parse_weeks_from_info(c['otherInfo'], c['parity'])
                         if week in weeks_allowed:
-                            # Adaugam informatiile relevante care definesc unicitatea blocajului
                             current_blocks_raw.append(f"{c['idURL']}_{c['startHour']}_{c['duration']}")
             
-            # Sortam pentru a ne asigura ca aceleasi blocaje produc aceeasi semnatura
             current_blocks_raw.sort()
-            # Adaugam si ID-urile salilor cautate in semnatura (pentru ca solverul itereaza si prin ele)
-            signature = hashlib.md5(f"{day}_{''.join(current_blocks_raw)}_{sali_ids}".encode()).hexdigest()
+            signature = hashlib.md5(f"{day}_{''.join(current_blocks_raw)}_{room_ids}".encode()).hexdigest()
 
-            # 2. Verificam daca am calculat deja aceasta configuratie
             if signature in solver_cache:
                 free_schedule[week][day] = solver_cache[signature]
                 continue
 
-            # 3. Daca nu e in cache, rulam solverul
+            # 2. Run Solver
             day_results = []
-            for sid in sali_ids:
+            for rid in room_ids:
                 model = cp_model.CpModel()
                 start_var = model.NewIntVar(START_DAY, END_DAY - duration_minutes, 'start')
                 end_var = model.NewIntVar(START_DAY + duration_minutes, END_DAY, 'end')
                 model.Add(end_var == start_var + duration_minutes)
 
-                # Colectam blocajele specifice pentru acest model
                 block_list = []
-                for cat in ['profesor', 'subgrupe', 'sali']:
-                    for c in constraints[cat]:
+                for category in ['profesor', 'subgrupe', 'sali']:
+                    for c in constraints[category]:
                         if c['weekDay'] == day:
-                            # Daca e sala, verificam sa fie sala curenta
-                            if cat == 'sali' and c['idURL'] != f"s{sid}":
+                            if category == 'sali' and c['idURL'] != f"s{rid}":
                                 continue
                             weeks_allowed = parse_weeks_from_info(c['otherInfo'], c['parity'])
                             if week in weeks_allowed:
@@ -325,12 +286,11 @@ def find_free_slots_cp_sat(db: Session, constraints: dict, sali_ids: List[int], 
                         day_results.append({
                             "start": f_start,
                             "end": f_end,
-                            "sala_id": sid
+                            "sala_id": rid
                         })
                         current_search_start = f_start + 60
                     else: break
 
-            # Salveaza in cache si in program
             solver_cache[signature] = day_results
             free_schedule[week][day] = day_results
 
@@ -338,8 +298,7 @@ def find_free_slots_cp_sat(db: Session, constraints: dict, sali_ids: List[int], 
 
 def group_slots_for_ui(db: Session, free_slots_raw: dict, current_semester: int):
     """
-    Transformă output-ul solverului în structură UI.
-    Filtrează zilele trecute și orele trecute din ziua curentă conform get_now().
+    Transforms solver output into UI structure.
     """
     day_map = {1: "Luni", 2: "Marți", 3: "Miercuri", 4: "Joi", 5: "Vineri", 6: "Sâmbătă"}
     grouped = {}
@@ -353,20 +312,15 @@ def group_slots_for_ui(db: Session, free_slots_raw: dict, current_semester: int)
             if not slots:
                 continue
 
-            # Calculăm data calendaristică a slotului
-            data_str = get_calendar_date(db, week, day_idx, current_semester)
+            date_str = get_calendar_date(db, week, day_idx, current_semester)
             
             try:
-                slot_date = datetime.strptime(data_str, "%d.%m.%Y").date()
-                
-                #  Dacă ziua a trecut deja, sărim peste toată ziua
+                slot_date = datetime.strptime(date_str, "%d.%m.%Y").date()
                 if slot_date <= today_date:
                     continue
-                    
             except (ValueError, TypeError):
                 continue
 
-            # Grupăm sloturile direct într-un format plat
             day_slots = []
             for s in slots:
                 day_slots.append({
@@ -419,7 +373,7 @@ if __name__ == "__main__":
         print(f"🗓️ Săptămâni de curs rămase: {active_weeks}")
 
         # 2. Extragere date structurate
-        data_result = get_data(db_session, test_req, current_semester)
+        data_result = get_schedule_and_reservation_data(db_session, test_req, current_semester)
         
         if "error" in data_result or "info" in data_result:
             print(f"❌ Mesaj: {data_result.get('error') or data_result.get('info')}")
