@@ -329,8 +329,8 @@ async def sync_calendar(bg: BackgroundTasks, user: User = Depends(get_current_us
     bg.add_task(run_sync_with_logging, populate_calendar, "Calendar")
     return {"message": "Sincronizare calendar pornită."}
 
-@router.post("/sync/orar")
-async def sync_orar(bg: BackgroundTasks, user: User = Depends(get_current_user)):
+@router.post("/sync/schedule")
+async def sync_schedule(bg: BackgroundTasks, user: User = Depends(get_current_user)):
     check_admin(user)
 
     print("Initiating preventive backup...")
@@ -341,8 +341,8 @@ async def sync_orar(bg: BackgroundTasks, user: User = Depends(get_current_user))
     bg.add_task(run_sync_with_logging, populate_orar, "Schedule")
     return {"message": "Sincronizare orar pornită."}
 
-@router.post("/sync/baza-orar")
-async def sync_full_db_orar(bg: BackgroundTasks, user: User = Depends(get_current_user)):
+@router.post("/sync/base-schedule")
+async def sync_full_db_schedule(bg: BackgroundTasks, user: User = Depends(get_current_user)):
     """
     Combined route that syncs base data followed immediately by the Schedule.
     """
