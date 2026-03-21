@@ -89,7 +89,7 @@ async def process_with_gemini(text: str):
     6. ANUL UNIVERISTAR: "yyyy-yyyy"
     
     7. OBSERVATII:
-       - Scrie tipul activității: "Curs", "Sesiune Examene", "Sesiune Restante", "Vacanta", "Reexaminari".
+       - Scrie tipul activității: "Curs", "Sesiune Examene", "Sesiune Restanțe", "Vacanță", "Reexaminări".
        - Adaugă zilele libere legale dacă există DOAR în acel interval, separate prin ";" (ex: "Sesiune Examene; 2026.01.24").
 
     8. ATENȚIE: Pentru extragerea datelor structurate folosește DOAR textul sursă. 
