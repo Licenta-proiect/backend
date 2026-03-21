@@ -58,11 +58,11 @@ async def create_user(
         last_name=user_in.last_name,
         first_name=user_in.first_name,
         email=user_in.email,
-        role=user_in.role.value
+        role=user_in.role
     ) 
     
     # 3. If the role is PROFESSOR, look for a match in the professors table
-    if user_in.role.value == UserRole.PROFESSOR.value:
+    if user_in.role == UserRole.PROFESSOR:
         # Search for professor by email
         professor = db.query(Professor).filter(Professor.email_address == user_in.email).first()
         
@@ -83,7 +83,7 @@ async def create_user(
         db.rollback()
         raise HTTPException(status_code=500, detail="Eroare la salvarea în baza de date.")
 
-    return {"message": f"Utilizatorul {user_in.first_name} {user_in.last_name} a fost creat cu succes sub rolul de {user_in.role.value}."}
+    return {"message": f"Utilizatorul {user_in.first_name} {user_in.last_name} a fost creat cu succes sub rolul de {user_in.role}."}
 
 @router.delete("/users/delete/{email}")
 async def delete_user(
