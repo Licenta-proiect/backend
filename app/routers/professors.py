@@ -29,7 +29,11 @@ async def get_professor_subjects(email: str, db: Session = Depends(get_db)):
     # This filtering ensures you only see courses taught to your faculty.
     subjects_query = db.query(Schedule.topic_long_name).filter(
         Schedule.teacher_id == professor.id,
-        Schedule.id_url.like('g%')
+        Schedule.id_url.like('g%'),
+        Schedule.topic_long_name.isnot(None),
+        Schedule.topic_long_name != "",  
+        Schedule.type_short_name.isnot(None), 
+        Schedule.type_short_name != ""
     ).distinct().all()
 
     # 3. Convert the result into a unique list of strings, sorted alphabetically

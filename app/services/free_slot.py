@@ -53,20 +53,14 @@ def get_max_week_for_groups(db: Session, group_ids: List[int], current_semester:
     for g in groups:
         is_this_group_terminal = False
 
-        # Find max year for this specialization and type
-        max_year = db.query(func.max(Subgroup.study_year)).filter(
-            Subgroup.specialization_short_name == g.specialization_short_name,
-            Subgroup.faculty_id == g.faculty_id,
-            Subgroup.type == g.type
-        ).scalar()
-
         # License (type "1"): Terminal year (max_year) but at least year 3
         if g.type == "1":
-            if g.study_year == max_year and g.study_year >= 3:
+            if g.study_year == 4:
                 is_this_group_terminal = True
+
         # Master or others: Just needs to be the max year
         else:
-            if g.study_year == max_year:
+            if g.study_year == 2:
                 is_this_group_terminal = True
 
         if not is_this_group_terminal:
