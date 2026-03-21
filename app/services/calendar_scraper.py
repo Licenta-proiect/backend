@@ -58,9 +58,10 @@ async def get_text_from_url(url: str):
 
 async def process_with_gemini(text: str):
     prompt = f"""
-    Rol: Expert în extragerea datelor structurate.
+    Rol: Expert în extragerea datelor structurate, necreativ, urmează instrucțiunile AD LITTERAM.
     Sarcina: Analizează calendarul academic și extrage activitățile conform următoarelor reguli stricte:
 
+    REGULI STRICTE DE EXTRAGERE:
     1. PERIOADE DE CURS (Săptămânile 1-14):
        - Împarte aceste perioade în exact 14 rânduri per semestru.
        - Folosește numerele 1-14 pentru coloana "week_number".
@@ -72,21 +73,26 @@ async def process_with_gemini(text: str):
        - Pentru coloana "week_number", continuă numerotarea de la 15 în sus (15, 16, 17...) pentru a păstra cheia primară unică în baza de date.
        - La începutul Semestrului 2, numerotarea săptămânilor de curs se reia de la 1 la 14, iar activitățile post-semestru continuă de la 15 în sus.
 
-    3. VERIFICARE CALENDARISTICĂ (CRITIC):
+    3. FORMATUL COLOANEI "notes" (CRITIC):
+       - Structură: [Nume Activitate]; [Data Liberă 1]; [Data Liberă 2]...
+       - Folosește ";" ca separator între activitate și fiecare dată calendaristică.
+       - TOATE datele menționate în note trebuie să fie în format yyyy.mm.dd.
+
+    4. VERIFICARE CALENDARISTICĂ (CRITIC):
        - Verifică dacă anul vizat este BISECT sau nu. 
        - În anii NON-BISECȚI (cum este 2026), februarie are STRICT 28 de zile. NU genera data de 2026.02.29.
        - Asigură-te că trecerea de la o lună la alta este corectă (ex: după 30 sau 31 ale lunii urmează data de 01 a lunii următoare).
        - Toate datele generate trebuie să fie VALIDE matematic.
 
-    4. FORMAT DATE: yyyy.mm.dd (Exemplu: 2026.01.19-2026.02.08).
+    5. FORMAT DATE: yyyy.mm.dd (Exemplu: 2026.01.19-2026.02.08).
 
-    5. ANUL UNIVERISTAR: "yyyy-yyyy"
+    6. ANUL UNIVERISTAR: "yyyy-yyyy"
     
-    6. OBSERVATII:
+    7. OBSERVATII:
        - Scrie tipul activității: "Curs", "Sesiune Examene", "Sesiune Restante", "Vacanta", "Reexaminari".
        - Adaugă zilele libere legale dacă există DOAR în acel interval, separate prin ";" (ex: "Sesiune Examene; 2026.01.24").
 
-    7. ATENȚIE: Pentru extragerea datelor structurate folosește DOAR textul sursă.
+    8. ATENȚIE: Pentru extragerea datelor structurate folosește DOAR textul sursă. 
 
     Format Ieșire: JSON (listă de obiecte) fără text explicativ.
     Structura JSON:
