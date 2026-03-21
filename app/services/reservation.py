@@ -258,7 +258,8 @@ def get_all_reservations_admin(db: Session):
             "start_hour": r.start_time_minutes // 60,
             "duration": r.duration // 60,
             "status": status_final,
-            "cancellation_reason": r.cancellation_reason if r.status == "cancelled" else None
+            "cancellation_reason": r.cancellation_reason if r.status == "cancelled" else None,
+            "week_number": r.week_number
         })
     
     return sorted(result, key=lambda x: x['date'], reverse=True)
