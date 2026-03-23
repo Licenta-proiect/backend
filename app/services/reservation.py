@@ -243,7 +243,14 @@ def get_all_reservations_admin(db: Session):
         prof_email = "N/A"
         
         if r.main_professor:
-            prof_name = f"{r.main_professor.last_name} {r.main_professor.first_name}"
+            name_parts = [
+                r.main_professor.position_short_name,
+                r.main_professor.phd_short_name, 
+                r.main_professor.last_name,
+                r.main_professor.first_name
+            ]
+
+            prof_name = " ".join(part for part in name_parts if part)
             prof_email = r.main_professor.email_address
             
         result.append({
@@ -286,7 +293,14 @@ def get_reservations_by_subgroups(db: Session):
                 if current_time_minutes > end_minutes:
                     status_final = "completed"
 
-        prof_name = f"{r.main_professor.last_name} {r.main_professor.first_name}" if r.main_professor else "N/A"
+        name_parts = [
+                r.main_professor.position_short_name,
+                r.main_professor.phd_short_name, 
+                r.main_professor.last_name,
+                r.main_professor.first_name
+            ]
+
+        prof_name = " ".join(part for part in name_parts if part)
         group_names_display = [f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index}" for g in r.subgroups]
 
         reservation_data = {
