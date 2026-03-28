@@ -281,7 +281,7 @@ async def get_rooms_by_subject(
         # Suggest all Amphitheaters (rooms containing 'Amf')
         amf_query = db.query(Room.id).filter(
             Room.has_schedule == True,
-            Room.name.ilike('%amf%')
+            Room.short_name.ilike('%amf%')
         ).all()
         suggested_ids.update({r[0] for r in amf_query})
 
