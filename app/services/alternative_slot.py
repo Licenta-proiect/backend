@@ -1,6 +1,6 @@
 # app\services\alternative_slot.py
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from app.models.models import Schedule 
 from app.schemas.user import AlternativeSlotRequest
@@ -89,25 +89,24 @@ def get_data_for_optimization(db: Session, req: AlternativeSlotRequest):
     if not compatible_info:
         return {"info": "Nu s-au găsit grupe alternative compatibile."}
 
-    # Extract "candidate slots" from other groups
-    # Search only for occurrences of the requested subject and type in compatible groups
-    potential_slots = []
-
-   # Iterate through each compatible group found
-    for gid, subject_name_in_that_group in compatible_info.items():
-        group_tag = f"g{gid}"
-        
+    # Optimized extraction of candidate slots using OR logic
+    # We create a list of conditions: (GroupID AND specific SubjectName)
+    group_filters = []
+    for gid, specific_subject in compatible_info.items():
         # Search the schedule of that specific group for slots that:
         # - Belong to that group (id_url)
         # - Are of the requested type (Lab/Seminar/Project)
         # - MATCH THE SUBJECT NAME as it appears in that group's schedule
-        slots = db.query(Schedule).filter(
-            Schedule.id_url == group_tag,
-            func.lower(Schedule.type_long_name) == func.lower(req.selected_type),
-            func.lower(Schedule.topic_long_name) == func.lower(subject_name_in_that_group)
-        ).all()
-        
-        potential_slots.extend(slots)
+        group_filters.append(
+            (Schedule.id_url == f"g{gid}") & 
+            (func.lower(Schedule.topic_long_name) == func.lower(specific_subject.lower()))
+        )
+
+    # Fetch all relevant Lab/Sem slots for all compatible groups in one go
+    potential_slots = db.query(Schedule).filter(
+        func.lower(Schedule.type_long_name) == func.lower(req.selected_type),
+        or_(*group_filters)
+    ).all()
 
     if not potential_slots:
         return {
