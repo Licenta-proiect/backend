@@ -154,12 +154,13 @@ async def get_professor_rooms(email: str, db: Session = Depends(get_db)):
 async def get_groups_by_subject(
     email: str, 
     subject: str, 
-    activity_type: str = None, 
+    activity_type: str, 
     db: Session = Depends(get_db)
 ):
     """
     Identifies the groups a professor teaches a specific subject to.
-    If the type is 'Course', it also searches for groups from different specializations (merged classes).
+    - If 'Course': Includes merged classes based on same time/room.
+    - If others (Lab/Seminar): Returns exact groups assigned to that subject/type/prof.
     """
     # 1. Identify the professor
     professor = db.query(Professor).filter(Professor.email_address == email).first()
@@ -194,8 +195,7 @@ async def get_groups_by_subject(
                 Schedule.start_hour == row.start_hour,
                 Schedule.duration == row.duration,
                 Schedule.room_id == row.room_id,
-                Schedule.type_long_name == row.type_long_name, # Also a Course
-                Schedule.topic_long_name != subject    # Subject with a different name (or alias)
+                Schedule.type_long_name == row.type_long_name # Also a Course
             ).all()
 
             for p in potential_merged:
