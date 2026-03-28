@@ -3,7 +3,7 @@ import random
 import httpx
 import asyncio
 from app.services.scraper import clean_val
-from sqlalchemy import distinct, text
+from sqlalchemy import distinct, func, text
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.models.models import Schedule, Professor, Room, Subgroup, Faculty
@@ -170,11 +170,19 @@ async def populate():
             await asyncio.sleep(random.uniform(6.0, 7.0))
 
         # --- PHASE 3: UNIQUE ROOMS ---
+        # Get IDs of rooms detected in the previously downloaded schedules
         room_ids_query = db.query(distinct(Schedule.room_id)).filter(
             Schedule.room_id.isnot(None)
         ).all()
-        room_ids = [row[0] for row in room_ids_query]
-        room_entities = db.query(Room).filter(Room.id.in_(room_ids)).all()
+        detected_room_ids = [row[0] for row in room_ids_query]
+        
+        # Query for ALL rooms that are in building D or C (using name or short_name)
+        # and combine them with the detected ones using an OR condition in SQL
+        room_entities = db.query(Room).filter(
+            (Room.building_name.ilike('%D%')) | 
+            (Room.building_name.ilike('%C%')) | 
+            (Room.id.in_(detected_room_ids))
+        ).all()
 
         total_rooms = len(room_entities)
         print(f"--- Phase 3: DETECTED ROOMS ({total_rooms} entities) ---")
