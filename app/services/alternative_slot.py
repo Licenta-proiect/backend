@@ -4,7 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.models.models import Schedule 
 from app.schemas.user import AlternativeSlotRequest
-from typing import Dict, Set
+from typing import Dict
 import re
 
 def format_row(row):
@@ -24,12 +24,12 @@ def format_row(row):
 
 def get_compatible_subgroups(db: Session, selected_subgroup_id: int, subject: str) -> Dict[int, str]:
     """
-    Identifică grupele colege de curs și returnează un dicționar cu 
-    ID-ul grupei și numele materiei așa cum apare în orarul fiecăreia.
+    Identifies peer groups sharing the same lecture and returns a dictionary 
+    containing the group ID and the subject name as it appears in each group's schedule.
     """
     group_tag = f"g{selected_subgroup_id}"
 
-    # 1. Găsim slotul de curs al grupei de referință
+    # 1. Find the lecture slot of the reference group
     course_slots = db.query(Schedule).filter(
         Schedule.id_url == group_tag,
         func.lower(Schedule.topic_long_name) == func.lower(subject),
@@ -39,12 +39,12 @@ def get_compatible_subgroups(db: Session, selected_subgroup_id: int, subject: st
     if not course_slots:
         return {}
 
-    # Dicționar: {id_subgrupa: nume_materie_specific}
+    # Dictionary: {subgroup_id: specific_subject_name}
     peer_data = {}
 
     for slot in course_slots:
-        # 2. Căutăm toate înregistrările de tip curs în același interval/sală/prof
-        # Extragem și topic_long_name pentru fiecare grupă găsită
+        # 2. Search for all lecture entries in the same time interval/room/professor
+        # Extract both id_url and topic_long_name for each group found
         peers = db.query(Schedule.id_url, Schedule.topic_long_name).filter(
             Schedule.id_url.like('g%'),
             Schedule.week_day == slot.week_day,
@@ -58,7 +58,7 @@ def get_compatible_subgroups(db: Session, selected_subgroup_id: int, subject: st
             try:
                 gid = int(p_id_url[1:])
                 if gid != selected_subgroup_id:
-                    # Salvăm denumirea exactă a materiei pentru această grupă
+                    # Save the exact subject name for this specific group
                     peer_data[gid] = p_topic
             except (ValueError, IndexError):
                 continue
@@ -92,15 +92,15 @@ def get_data_for_optimization(db: Session, req: AlternativeSlotRequest):
     # Extract "candidate slots" from other groups
     # Search only for occurrences of the requested subject and type in compatible groups
     potential_slots = []
-    
-    # Iterăm prin fiecare grupă compatibilă găsită
+
+   # Iterate through each compatible group found
     for gid, subject_name_in_that_group in compatible_info.items():
         group_tag = f"g{gid}"
         
-        # Căutăm în orarul grupei respective sloturi care:
-        # - Aparțin acelei grupe (id_url)
-        # - Sunt de tipul cerut (Laborator/Seminar/Proiect)
-        # - AU NUMELE MATERIEI așa cum apare ea în orarul acelei grupe
+        # Search the schedule of that specific group for slots that:
+        # - Belong to that group (id_url)
+        # - Are of the requested type (Lab/Seminar/Project)
+        # - MATCH THE SUBJECT NAME as it appears in that group's schedule
         slots = db.query(Schedule).filter(
             Schedule.id_url == group_tag,
             func.lower(Schedule.type_long_name) == func.lower(req.selected_type),
