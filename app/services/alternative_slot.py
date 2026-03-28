@@ -79,7 +79,13 @@ def get_data_for_optimization(db: Session, req: AlternativeSlotRequest):
     
     # If attends_course is False, remove courses from the busy list
     if not req.attends_course:
-        student_query = student_query.filter(func.lower(Schedule.type_long_name) != func.lower("curs"))
+        student_query = student_query.filter(
+            or_(
+                Schedule.type_long_name == None,
+                Schedule.type_long_name == "",
+                ~func.lower(Schedule.type_long_name).like('%curs%')
+            )
+        )
     
     student_busy_slots = student_query.all()
 
@@ -99,7 +105,7 @@ def get_data_for_optimization(db: Session, req: AlternativeSlotRequest):
         # - MATCH THE SUBJECT NAME as it appears in that group's schedule
         group_filters.append(
             (Schedule.id_url == f"g{gid}") & 
-            (func.lower(Schedule.topic_long_name) == func.lower(specific_subject.lower()))
+            (func.lower(Schedule.topic_long_name) == specific_subject.lower())
         )
 
     # Fetch all relevant Lab/Sem slots for all compatible groups in one go
