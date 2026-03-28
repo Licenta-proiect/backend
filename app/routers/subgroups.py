@@ -58,7 +58,10 @@ async def get_subgroup_subjects(subgroup_id: int, db: Session = Depends(get_db))
 
     # 3. Extract subjects (topic_long_name) from the Schedule table
     # Use .distinct() to avoid duplicates
-    subjects_query = db.query(Schedule.topic_long_name).filter(
+    subjects_query = db.query(
+        Schedule.topic_long_name, 
+        Schedule.topic_short_name
+    ).filter(
         Schedule.id_url == group_id_url,
         Schedule.topic_long_name.isnot(None),
         Schedule.topic_long_name != "",
@@ -68,7 +71,16 @@ async def get_subgroup_subjects(subgroup_id: int, db: Session = Depends(get_db))
 
     # 4. Convert result to a list of strings and sort alphabetically
     # Use m[0] because the query returns a list of tuples
-    subjects_list = sorted([m[0] for m in subjects_query if m[0]])
+    subjects_list = sorted(
+        [
+            {
+                "longName": m.topic_long_name,
+                "shortName": m.topic_short_name
+            } 
+            for m in subjects_query if m.topic_long_name
+        ],
+        key=lambda x: x["longName"]
+    )
 
     return {
         "subgroup_id": subgroup_id,
