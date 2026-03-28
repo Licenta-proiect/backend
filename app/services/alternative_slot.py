@@ -22,17 +22,14 @@ def format_row(row):
         "otherInfo": row.other_info    
     }
 
-def get_compatible_subgroups(db: Session, selected_subgroup_id: int, subject: str, activity_type: str) -> Set[int]:
+def get_compatible_subgroups(db: Session, selected_subgroup_id: int, subject: str) -> Set[int]:
     """
-    Identifică grupele compatibile bazându-se pe Curs ca punct de legătură:
-    1. Găsește sloturile de Curs ale grupei selectate (după nume și tip 'curs').
-    2. Găsește TOATE grupele care sunt în aceleași sloturi de timp/spațiu/profesor.
-    3. Pentru acele grupe, verifică dacă au o activitate de tipul cerut (Lab/Sem).
+    Identifică grupele care participă la același CURS cu grupa selectată.
+    Folosește coincidența de timp, sală și profesor pentru a ignora diferențele de nume ale materiei.
     """
     group_tag = f"g{selected_subgroup_id}"
-    type_lower = activity_type.lower()
 
-    # --- PASUL 1: Găsim "ANCORA" (Cursul grupei curente) ---
+    # 1. Găsim sloturile de curs pentru grupa de referință
     course_slots = db.query(Schedule).filter(
         Schedule.id_url == group_tag,
         func.lower(Schedule.topic_long_name) == func.lower(subject),
@@ -42,9 +39,9 @@ def get_compatible_subgroups(db: Session, selected_subgroup_id: int, subject: st
     if not course_slots:
         return set()
 
-    # --- PASUL 2: Identificăm colegii de curs (Amprenta Spațio-Temporală) ---
     peer_group_ids = set()
     for slot in course_slots:
+        # 2. Căutăm TOATE grupele care sunt în același loc la aceeași oră cu același prof
         peers = db.query(Schedule.id_url).filter(
             Schedule.id_url.like('g%'),
             Schedule.week_day == slot.week_day,
@@ -62,23 +59,7 @@ def get_compatible_subgroups(db: Session, selected_subgroup_id: int, subject: st
             except (ValueError, IndexError):
                 continue
 
-    # --- PASUL 3: Validăm existența activității cerute (ex: Lab) la colegi ---
-    valid_ids = set()
-    for gid in peer_group_ids:
-        target_tag = f"g{gid}"
-        
-        # Verificăm dacă grupa colegă are tipul de activitate cerut.
-        # Putem filtra și după nume (subject) DACĂ suntem siguri că numele se păstrează.
-        # Dacă vrei să fii 100% sigur, poți căuta doar după tip la grupa respectivă.
-        has_activity = db.query(Schedule).filter(
-            Schedule.id_url == target_tag,
-            func.lower(Schedule.type_long_name) == type_lower
-        ).first()
-        
-        if has_activity:
-            valid_ids.add(gid)
-
-    return valid_ids
+    return peer_group_ids
 
 def get_data_for_optimization(db: Session, req: AlternativeSlotRequest):
     '''
@@ -100,7 +81,7 @@ def get_data_for_optimization(db: Session, req: AlternativeSlotRequest):
 
     # Identify compatible groups (same specialization, year, etc.)
     compatible_group_ids = get_compatible_subgroups(
-        db, req.selected_group_id, req.selected_subject, req.selected_type
+        db, req.selected_group_id, req.selected_subject
     )
 
     # If no other subgroup has this subject
@@ -119,7 +100,6 @@ def get_data_for_optimization(db: Session, req: AlternativeSlotRequest):
         
         potential_slots = db.query(Schedule).filter(
             Schedule.id_url.in_(compatible_id_urls),
-            func.lower(Schedule.topic_long_name) == func.lower(req.selected_subject),
             func.lower(Schedule.type_long_name) == func.lower(req.selected_type)
         ).all()
 
