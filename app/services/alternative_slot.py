@@ -79,7 +79,7 @@ def get_data_for_optimization(db: Session, req: AlternativeSlotRequest):
     
     # If attends_course is False, remove courses from the busy list
     if not req.attends_course:
-        student_query = student_query.filter(func.lower(Schedule.type_long_name) != func.lower("course"))
+        student_query = student_query.filter(func.lower(Schedule.type_long_name) != func.lower("curs"))
     
     student_busy_slots = student_query.all()
 
