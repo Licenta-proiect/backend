@@ -277,11 +277,11 @@ async def get_rooms_by_subject(
     # 3. SUGGESTIONS Logic
     suggested_ids = set()
 
-    if activity_type.lower()=="curs":
+    if activity_type and "curs" in activity_type.lower():
         # Suggest all Amphitheaters (rooms containing 'Amf')
         amf_query = db.query(Room.id).filter(
             Room.has_schedule == True,
-            func.lower(Room.short_name).ilike('%amf%')
+            Room.name.ilike('%amf%')
         ).all()
         suggested_ids.update({r[0] for r in amf_query})
 
