@@ -147,3 +147,33 @@ async def get_professor_activity_types(
     types = sorted([t[0] for t in query if t[0]])
 
     return types
+
+@router.get("/group-activity-types")
+async def get_group_activity_types(
+    group_id: int, 
+    subject: str, 
+    db: Session = Depends(get_db)
+):
+    """
+    Returns unique activity types (Lecture, Lab, etc.) that a specific 
+    subgroup has in its schedule for a given subject.
+    """
+    # Verify if the subgroup exists
+    group = db.query(Subgroup).filter(Subgroup.id == group_id).first()
+    if not group:
+        return []
+
+    # Construct the search string for id_url (format g + id)
+    group_url_id = f"g{group.id}"
+
+    # Query the Schedule table for distinct activity types
+    # Case-insensitive match for the subject name
+    query = db.query(Schedule.type_long_name).distinct().filter(
+        Schedule.id_url == group_url_id,
+        func.lower(Schedule.topic_long_name) == func.lower(subject)
+    ).all()
+
+    # Extract strings from tuples and sort them
+    activity_types = sorted([t[0] for t in query if t[0]])
+
+    return activity_types
