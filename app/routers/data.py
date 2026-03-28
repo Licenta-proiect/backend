@@ -155,8 +155,8 @@ async def get_group_activity_types(
     db: Session = Depends(get_db)
 ):
     """
-    Returns unique activity types (Lecture, Lab, etc.) that a specific 
-    subgroup has in its schedule for a given subject.
+    Returns unique activity types (Lecture, Lab, etc.) excluding 'Curs' 
+    that a specific subgroup has in its schedule.
     """
     # Verify if the subgroup exists
     group = db.query(Subgroup).filter(Subgroup.id == group_id).first()
@@ -170,7 +170,8 @@ async def get_group_activity_types(
     # Case-insensitive match for the subject name
     query = db.query(Schedule.type_long_name).distinct().filter(
         Schedule.id_url == group_url_id,
-        func.lower(Schedule.topic_long_name) == func.lower(subject)
+        func.lower(Schedule.topic_long_name) == func.lower(subject),
+        func.lower(Schedule.type_long_name) != "curs"
     ).all()
 
     # Extract strings from tuples and sort them
