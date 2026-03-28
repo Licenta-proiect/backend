@@ -1,5 +1,6 @@
 # app\routers\professors.py
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.models import Professor, Schedule, Subgroup, Room, User
@@ -172,11 +173,11 @@ async def get_groups_by_subject(
     anchor_query = db.query(Schedule).filter(
         Schedule.teacher_id == professor.id,
         Schedule.id_url.like('g%'),
-        Schedule.topic_long_name == subject
+        func.lower(Schedule.topic_long_name) == func.lower(subject)
     )
     
     if activity_type:
-        anchor_query = anchor_query.filter(Schedule.type_long_name == activity_type)
+        anchor_query = anchor_query.filter(func.lower(Schedule.type_long_name) == func.lower(activity_type))
         
     anchor_rows = anchor_query.all()
     
@@ -246,10 +247,15 @@ async def get_groups_by_subject(
     }
 
 @router.get("/rooms-by-subject")
-async def get_rooms_by_subject(email: str, subject: str, db: Session = Depends(get_db)):
+async def get_rooms_by_subject(
+    email: str, 
+    subject: str, 
+    activity_type: str, 
+    db: Session = Depends(get_db)
+):
     """
     Identifies the rooms where a specific professor teaches a specific subject,
-    limited to FIESC groups.
+    optionally filtered by activity type (Course, Lab, etc.).
     """
     # 1. Identify the professor by email
     professor = db.query(Professor).filter(Professor.email_address == email).first()
@@ -261,7 +267,8 @@ async def get_rooms_by_subject(email: str, subject: str, db: Session = Depends(g
     rooms_ids_query = db.query(Schedule.room_id).filter(
         Schedule.teacher_id == professor.id,
         Schedule.id_url.like('g%'),
-        Schedule.topic_long_name == subject
+        func.lower(Schedule.topic_long_name) == func.lower(subject),
+        func.lower(Schedule.type_long_name) == func.lower(activity_type)
     ).distinct().all()
 
     # 3. Extract numerical room IDs (filtering null values)
