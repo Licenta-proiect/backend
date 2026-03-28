@@ -2,7 +2,7 @@
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
-from app.models.models import Schedule 
+from app.models.models import Schedule, Subgroup 
 from app.schemas.user import AlternativeSlotRequest
 from typing import Dict
 import re
@@ -24,44 +24,71 @@ def format_row(row):
 
 def get_compatible_subgroups(db: Session, selected_subgroup_id: int, subject: str) -> Dict[int, str]:
     """
-    Identifies peer groups sharing the same lecture and returns a dictionary 
-    containing the group ID and the subject name as it appears in each group's schedule.
+    Identifies peer groups. 
+    1. Primary: Groups sharing the same lecture slot.
+    2. Fallback: Groups in the same Year/Specialization with the same subject name.
     """
     group_tag = f"g{selected_subgroup_id}"
 
-    # 1. Find the lecture slot of the reference group
+    # --- 1. PRIMARY LOGIC: Share same lecture ---
     course_slots = db.query(Schedule).filter(
         Schedule.id_url == group_tag,
         func.lower(Schedule.topic_long_name) == func.lower(subject),
         func.lower(Schedule.type_long_name).like('%curs%')
     ).all()
 
-    if not course_slots:
-        return {}
-
-    # Dictionary: {subgroup_id: specific_subject_name}
     peer_data = {}
 
-    for slot in course_slots:
-        # 2. Search for all lecture entries in the same time interval/room/professor
-        # Extract both id_url and topic_long_name for each group found
-        peers = db.query(Schedule.id_url, Schedule.topic_long_name).filter(
-            Schedule.id_url.like('g%'),
-            Schedule.week_day == slot.week_day,
-            Schedule.start_hour == slot.start_hour,
-            Schedule.room_id == slot.room_id,
-            Schedule.teacher_id == slot.teacher_id,
-            func.lower(Schedule.type_long_name).like('%curs%')
-        ).distinct().all()
+    if course_slots:
+        for slot in course_slots:
+            peers = db.query(Schedule.id_url, Schedule.topic_long_name).filter(
+                Schedule.id_url.like('g%'),
+                Schedule.week_day == slot.week_day,
+                Schedule.start_hour == slot.start_hour,
+                Schedule.room_id == slot.room_id,
+                Schedule.teacher_id == slot.teacher_id,
+                func.lower(Schedule.type_long_name).like('%curs%')
+            ).distinct().all()
+            
+            for p_id_url, p_topic in peers:
+                try:
+                    gid = int(p_id_url[1:])
+                    if gid != selected_subgroup_id:
+                        peer_data[gid] = p_topic
+                except (ValueError, IndexError):
+                    continue
         
-        for p_id_url, p_topic in peers:
-            try:
-                gid = int(p_id_url[1:])
-                if gid != selected_subgroup_id:
-                    # Save the exact subject name for this specific group
-                    peer_data[gid] = p_topic
-            except (ValueError, IndexError):
-                continue
+        if peer_data:
+            return peer_data
+
+    # --- 2. FALLBACK LOGIC: Metadata matching ---
+    # Fetch metadata of the reference group
+    ref_group = db.query(Subgroup).filter(Subgroup.id == selected_subgroup_id).first()
+    if not ref_group:
+        return {}
+
+    # Find other subgroups in the same Faculty, Year, and Specialization
+    potential_peer_groups = db.query(Subgroup).filter(
+        Subgroup.faculty_id == ref_group.faculty_id,
+        Subgroup.study_year == ref_group.study_year,
+        Subgroup.specialization_short_name == ref_group.specialization_short_name,
+        Subgroup.id != selected_subgroup_id
+    ).all()
+
+    peer_ids = [g.id for g in potential_peer_groups]
+    if not peer_ids:
+        return {}
+
+    # Check which of these groups actually have the same subject name in their schedule
+    peer_id_urls = [f"g{pid}" for pid in peer_ids]
+    peers_with_subject = db.query(Schedule.id_url, Schedule.topic_long_name).filter(
+        Schedule.id_url.in_(peer_id_urls),
+        func.lower(Schedule.topic_long_name) == func.lower(subject)
+    ).distinct().all()
+
+    for p_id_url, p_topic in peers_with_subject:
+        gid = int(p_id_url[1:])
+        peer_data[gid] = p_topic
 
     return peer_data
 
