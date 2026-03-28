@@ -2,9 +2,9 @@
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from app.models.models import Schedule, Subgroup 
+from app.models.models import Schedule 
 from app.schemas.user import AlternativeSlotRequest
-from typing import Set, List, Dict, Any
+from typing import Set
 import re
 
 def format_row(row):
@@ -22,47 +22,62 @@ def format_row(row):
         "otherInfo": row.other_info    
     }
 
-def check_subject_existence(db: Session, subgroup_id: int, subject: str, activity_type: str) -> bool:
-    """
-    Checks the 'schedule' table to see if the subgroup has the specified subject and activity type.
-    Filtering is done using the 'g' prefix before the subgroup ID for idURL.
-    """
-    # Build the target ID: g + ID (e.g., "g44")
-    target_id_url = f"g{subgroup_id}"
-    
-    schedule_row = db.query(Schedule).filter(
-        Schedule.id_url == target_id_url,
-        func.lower(Schedule.topic_long_name) == func.lower(subject),
-        func.lower(Schedule.type_long_name) == func.lower(activity_type)
-    ).first()
-    
-    return schedule_row is not None
-
 def get_compatible_subgroups(db: Session, selected_subgroup_id: int, subject: str, activity_type: str) -> Set[int]:
     """
-    Returns a set of subgroup IDs that the student could potentially attend (same specialization/year).
+    Identifică grupele compatibile bazându-se pe Curs ca punct de legătură:
+    1. Găsește sloturile de Curs ale grupei selectate (după nume și tip 'curs').
+    2. Găsește TOATE grupele care sunt în aceleași sloturi de timp/spațiu/profesor.
+    3. Pentru acele grupe, verifică dacă au o activitate de tipul cerut (Lab/Sem).
     """
-    # 1. Retrieve reference data for the selected group
-    subgroup_ref = db.query(Subgroup).filter(Subgroup.id == selected_subgroup_id).first()
-    
-    if not subgroup_ref:
-        return set()
+    group_tag = f"g{selected_subgroup_id}"
+    type_lower = activity_type.lower()
 
-    # 2. Search for potential subgroups (same faculty, specialization, year)
-    potential_groups = db.query(Subgroup).filter(
-        Subgroup.has_schedule == True,
-        Subgroup.faculty_id == subgroup_ref.faculty_id,
-        func.lower(Subgroup.specialization_short_name) == func.lower(subgroup_ref.specialization_short_name),
-        Subgroup.study_year == subgroup_ref.study_year,
-        Subgroup.id != selected_subgroup_id # Exclude the user's own group
+    # --- PASUL 1: Găsim "ANCORA" (Cursul grupei curente) ---
+    course_slots = db.query(Schedule).filter(
+        Schedule.id_url == group_tag,
+        func.lower(Schedule.topic_long_name) == func.lower(subject),
+        func.lower(Schedule.type_long_name).like('%curs%')
     ).all()
 
-    # 3. Filter only those groups that actually have the subject and type in their schedule
+    if not course_slots:
+        return set()
+
+    # --- PASUL 2: Identificăm colegii de curs (Amprenta Spațio-Temporală) ---
+    peer_group_ids = set()
+    for slot in course_slots:
+        peers = db.query(Schedule.id_url).filter(
+            Schedule.id_url.like('g%'),
+            Schedule.week_day == slot.week_day,
+            Schedule.start_hour == slot.start_hour,
+            Schedule.room_id == slot.room_id,
+            Schedule.teacher_id == slot.teacher_id,
+            func.lower(Schedule.type_long_name).like('%curs%')
+        ).distinct().all()
+        
+        for p in peers:
+            try:
+                gid = int(p[0][1:])
+                if gid != selected_subgroup_id:
+                    peer_group_ids.add(gid)
+            except (ValueError, IndexError):
+                continue
+
+    # --- PASUL 3: Validăm existența activității cerute (ex: Lab) la colegi ---
     valid_ids = set()
-    for sg in potential_groups:
-        if check_subject_existence(db, sg.id, subject, activity_type):
-            valid_ids.add(sg.id)
-            
+    for gid in peer_group_ids:
+        target_tag = f"g{gid}"
+        
+        # Verificăm dacă grupa colegă are tipul de activitate cerut.
+        # Putem filtra și după nume (subject) DACĂ suntem siguri că numele se păstrează.
+        # Dacă vrei să fii 100% sigur, poți căuta doar după tip la grupa respectivă.
+        has_activity = db.query(Schedule).filter(
+            Schedule.id_url == target_tag,
+            func.lower(Schedule.type_long_name) == type_lower
+        ).first()
+        
+        if has_activity:
+            valid_ids.add(gid)
+
     return valid_ids
 
 def get_data_for_optimization(db: Session, req: AlternativeSlotRequest):
@@ -70,11 +85,8 @@ def get_data_for_optimization(db: Session, req: AlternativeSlotRequest):
     Extracts two sets of data: the current group's constraints (when the student is busy) 
     and slot options from compatible groups.
     '''
-    # 1. Verify if the selected group has the requested subject and type
-    if not check_subject_existence(db, req.selected_group_id, req.selected_subject, req.selected_type):
-        return {"info": "Grupa selectată nu are această materie sau tip de activitate în orar."}
 
-    # 2. Extract "busy intervals" for the selected group (Constraints)
+    # Extract "busy intervals" for the selected group (Constraints)
     # These are the hours when the student CANNOT attend a makeup session
     target_id_url = f"g{req.selected_group_id}"
     
@@ -86,7 +98,7 @@ def get_data_for_optimization(db: Session, req: AlternativeSlotRequest):
     
     student_busy_slots = student_query.all()
 
-    # 3. Identify compatible groups (same specialization, year, etc.)
+    # Identify compatible groups (same specialization, year, etc.)
     compatible_group_ids = get_compatible_subgroups(
         db, req.selected_group_id, req.selected_subject, req.selected_type
     )
@@ -98,7 +110,7 @@ def get_data_for_optimization(db: Session, req: AlternativeSlotRequest):
             "Prin urmare, nu există alternative pentru recuperare."
         }
 
-    # 4. Extract "candidate slots" from other groups
+    # Extract "candidate slots" from other groups
     # Search only for occurrences of the requested subject and type in compatible groups
     potential_slots = []
     if compatible_group_ids:
@@ -111,7 +123,7 @@ def get_data_for_optimization(db: Session, req: AlternativeSlotRequest):
             func.lower(Schedule.type_long_name) == func.lower(req.selected_type)
         ).all()
 
-    # 5. Format data for the algorithm
+    # Format data for the algorithm
     return {
         "student_constraints": [format_row(row) for row in student_busy_slots],
         "potential_alternatives": [format_row(row) for row in potential_slots]
