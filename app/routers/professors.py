@@ -255,7 +255,7 @@ async def get_rooms_by_subject(
 ):
     """
     Identifies the rooms where a specific professor teaches a specific subject,
-    optionally filtered by activity type (Course, Lab, etc.).
+    filtered by activity type (Course, Lab, etc.).
     """
     # 1. Identify the professor by email
     professor = db.query(Professor).filter(Professor.email_address == email).first()
@@ -271,10 +271,24 @@ async def get_rooms_by_subject(
         func.lower(Schedule.type_long_name) == func.lower(activity_type)
     ).distinct().all()
 
-    # 3. Extract numerical room IDs (filtering null values)
-    ids_set = {row[0] for row in rooms_ids_query if row[0] is not None}
+    # Extract numerical room IDs (filtering null values)
+    primary_ids = {row[0] for row in rooms_ids_query if row[0] is not None}
 
-    if not ids_set:
+    # 3. SUGGESTIONS Logic
+    suggested_ids = set()
+
+    if activity_type.lower()=="curs":
+        # Suggest all Amphitheaters (rooms containing 'Amf')
+        amf_query = db.query(Room.id).filter(
+            Room.has_schedule == True,
+            func.lower(Room.short_name).ilike('%amf%')
+        ).all()
+        suggested_ids.update({r[0] for r in amf_query})
+
+    # 4. Fetch all room details
+    all_target_ids = primary_ids.union(suggested_ids)
+    
+    if not all_target_ids:
         return {
             "id": professor.id,
             "lastName": professor.last_name,
@@ -283,12 +297,12 @@ async def get_rooms_by_subject(
             "rooms": []
         }
 
-    # 4. Get details from the Room table and order them alphabetically by name
+    # 5. Get details from the Room table and order them alphabetically by name
     rooms_details = db.query(Room).filter(
-        Room.id.in_(list(ids_set))
+        Room.id.in_(list(all_target_ids))
     ).order_by(Room.name.asc()).all()
 
-    # 5. Format the result similar to the /rooms route
+    # 6. Format the result similar to the /rooms route
     result = [
         {
             "id": s.id,
