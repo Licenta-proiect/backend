@@ -128,7 +128,7 @@ async def search_alternative_slots(
         
     try:
         # Run conflict detection algorithm
-        raw_alternatives = find_alternative_slots(data)
+        raw_alternatives = find_alternative_slots(data, future_weeks_list)
 
         # Extract unique IDs for Subgroups, Professors, and Rooms
         subgroup_ids = {int(alt["idURL"].replace('g', '')) for alt in raw_alternatives}

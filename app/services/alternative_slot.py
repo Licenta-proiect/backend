@@ -213,8 +213,14 @@ def parse_weeks_from_info(other_info, parity):
     # If nothing else, return the whole semester
     return all_weeks
 
-def find_alternative_slots(data):
+def find_alternative_slots(data, future_weeks: list):
+    '''
+    Identifies valid makeup session opportunities by cross-referencing 
+    a student's existing schedule constraints with potential alternative 
+    slots from peer groups.
+    '''
     results = []
+    future_weeks_set = set(future_weeks)
     student_days_map = {i: [] for i in range(1, 7)}
     
     for i, slot in enumerate(data["student_constraints"]):
@@ -227,7 +233,12 @@ def find_alternative_slots(data):
             })
 
     for alt in data["potential_alternatives"]:
-        weeks_alt = parse_weeks_from_info(alt["otherInfo"], alt["parity"])
+        weeks_alt_all = parse_weeks_from_info(alt["otherInfo"], alt["parity"])
+        weeks_alt = weeks_alt_all & future_weeks_set
+
+        if not weeks_alt:
+            continue
+
         d_alt = int(alt["weekDay"])
         s_alt = int(alt["startHour"])
         e_alt = s_alt + int(alt["duration"])
@@ -288,7 +299,7 @@ if __name__ == "__main__":
         elif "info" in data:
             print(f"ℹ️ Info: {data['info']}")
         else:
-            alternatives = find_alternative_slots(data)
+            alternatives = find_alternative_slots(data, future_weeks=[9, 10, 11, 12, 13, 14])
             print(f"Found {len(alternatives)} compatible slots:")
             for res in alternatives:
                 print(f"Group: {res['idURL']} | Day: {res['day']} | Time: {res['formattedTime']} | Weeks: {res['weeks']}")
