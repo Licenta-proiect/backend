@@ -115,6 +115,9 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
     days_to_check = [req.start_date + timedelta(days=i) for i in range(delta.days + 1) 
                      if (req.start_date + timedelta(days=i)) > today]
 
+    rooms_data = db.query(Room).filter(Room.id.in_(req.room_ids)).all()
+    rooms_dict = {r.id: r for r in rooms_data}
+
     final_report = []
     START_DAY, END_DAY = 8 * 60, 21 * 60
     duration_min = req.duration * 60
@@ -124,7 +127,7 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
         day_options = []
 
         for rid in req.room_ids:
-            room_obj = db.query(Room).filter(Room.id == rid).first()
+            room_obj = rooms_dict.get(rid)
             if req.number_of_people > 0 and room_obj and room_obj.capacity < req.number_of_people:
                 continue
 
