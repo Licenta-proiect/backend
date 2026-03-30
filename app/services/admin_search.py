@@ -122,10 +122,8 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
     final_report = []
 
     for target_date in days_to_check:
-        # Collect constraints for THIS specific day
         constraints = get_admin_constraints_for_day(db, req, target_date)
         
-        # Solver limits
         START_LIMIT = 8 * 60
         END_DAY = 21 * 60
         duration_min = req.duration * 60
@@ -137,47 +135,57 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
             if req.number_of_people > 0 and room_obj and room_obj.capacity < req.number_of_people:
                 continue
 
-            model = cp_model.CpModel()
-            start_var = model.NewIntVar(START_LIMIT, END_DAY - duration_min, 'start')
-            end_var = model.NewIntVar(START_LIMIT + duration_min, END_DAY, 'end')
-            model.Add(end_var == start_var + duration_min)
-
-            relevant_blocks = constraints['professor'] + constraints['subgroups'] + \
-                              [b for b in constraints['rooms'] if b['idURL'] == f"s{rid}"]
-
-            for block in relevant_blocks:
-                b_start = int(block['startHour'])
-                b_end = b_start + int(block['duration'])
-                
-                o1, o2 = model.NewBoolVar('o1'), model.NewBoolVar('o2')
-                model.Add(end_var <= b_start).OnlyEnforceIf(o1)
-                model.Add(start_var >= b_end).OnlyEnforceIf(o2)
-                model.AddBoolOr([o1, o2])
-
-            solver = cp_model.CpSolver()
             current_search_start = START_LIMIT
             
+            # Căutăm exhaustiv sloturi pentru această sală
             while current_search_start <= (END_DAY - duration_min):
-                model.Add(start_var >= current_search_start)
+                model = cp_model.CpModel() # RECONSTRUIM modelul pentru fiecare căutare nouă
+                
+                start_var = model.NewIntVar(current_search_start, END_DAY - duration_min, 'start')
+                end_var = model.NewIntVar(current_search_start + duration_min, END_DAY, 'end')
+                model.Add(end_var == start_var + duration_min)
+
+                # Adăugăm constrângerile de ocupare
+                relevant_blocks = constraints['professor'] + constraints['subgroups'] + \
+                                  [b for b in constraints['rooms'] if b['idURL'] == f"s{rid}"]
+
+                for block in relevant_blocks:
+                    b_start = int(block['startHour'])
+                    b_end = b_start + int(block['duration'])
+                    
+                    o1 = model.NewBoolVar('o1')
+                    o2 = model.NewBoolVar('o2')
+                    model.Add(end_var <= b_start).OnlyEnforceIf(o1)
+                    model.Add(start_var >= b_end).OnlyEnforceIf(o2)
+                    model.AddBoolOr([o1, o2])
+
+                # CRUCIAL: Forțăm solver-ul să găsească CEL MAI DEVREME slot
+                model.Minimize(start_var)
+
+                solver = cp_model.CpSolver()
                 status = solver.Solve(model)
+                
                 if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
                     f_start = solver.Value(start_var)
                     day_results.append({
                         "room_id": rid,
                         "room_name": room_obj.name if room_obj else f"Sala {rid}",
                         "start_time": f_start // 60,
-                        "end_time": (f_start + duration_min) // 60,
+                        "end_time": (f_start + duration_min) // 60
                     })
-                    current_search_start = f_start + 60 # Hourly steps
+                    # Avansăm cu 60 de minute de la începutul slotului găsit pentru a vedea următoarea posibilitate
+                    current_search_start = f_start + 60 
                 else:
+                    # Nu mai există sloturi fezabile în restul zilei
                     break
         
-        # Only add the day to the report if free slots were found
         if day_results:
+            # Sortăm rezultatele zilei cronologic (în caz că sunt mai multe săli)
+            day_results.sort(key=lambda x: (x['start_time']))
             final_report.append({
                 "date": target_date.strftime("%Y-%m-%d"),
                 "options": day_results
-            })  
+            }) 
             
     return final_report
 
