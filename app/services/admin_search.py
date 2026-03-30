@@ -185,7 +185,7 @@ if __name__ == "__main__":
             specialization_years=["C;1"], 
             professor_ids=[68], 
             start_date=date(2026, 6, 1), 
-            end_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 3),
             duration=2,
             number_of_people=20,
             activity_type="event"
