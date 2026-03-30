@@ -69,6 +69,62 @@ async def get_active_groups(db: Session = Depends(get_db)):
         } for g in groups
     ]
 
+@router.get("/groups-hierarchical")
+async def get_groups_hierarchical(db: Session = Depends(get_db)):
+    """
+    Returns subgroups grouped hierarchically: Specialization -> Study Year -> Group/Subgroup.
+    Ideal for complex selectors (TreeSelect) in the Admin dashboard.
+    """
+    # 1. Fetch all subgroups that have a schedule, ordered for easier processing
+    groups = db.query(Subgroup).filter(
+        Subgroup.has_schedule == True
+    ).order_by(
+        Subgroup.specialization_short_name, 
+        Subgroup.study_year, 
+        Subgroup.group_name.asc(), 
+        Subgroup.subgroup_index.asc()
+    ).all()
+
+    hierarchical_data = {}
+
+    # 2. Build the nested dictionary structure
+    for g in groups:
+        spec = g.specialization_short_name
+        year = g.study_year
+        
+        # Initialize Specialization if it doesn't exist
+        if spec not in hierarchical_data:
+            hierarchical_data[spec] = {}
+            
+        # Initialize Year within the Specialization
+        if year not in hierarchical_data[spec]:
+            hierarchical_data[spec][year] = []
+            
+        # Add the subgroup to the corresponding list
+        hierarchical_data[spec][year].append({
+            "value": g.id,
+            "label": f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index if g.subgroup_index else ''}"
+        })
+
+    # 3. Transform the dictionary into a list structure (Array of Objects) for the Frontend
+    result = []
+    for spec_name, years in hierarchical_data.items():
+        spec_node = {
+            "label": spec_name,
+            "value": spec_name,  # Unique key for the tree node
+            "children": []
+        }
+        for year_name, subgroups in years.items():
+            year_node = {
+                "label": year_name,
+                "value": f"{spec_name} {year_name}",
+                "children": subgroups
+            }
+            spec_node["children"].append(year_node)
+        result.append(spec_node)
+
+    return result
+
 @router.get("/activity-type")
 async def get_activity_types(db: Session = Depends(get_db)):
     """
