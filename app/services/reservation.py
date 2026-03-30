@@ -189,6 +189,7 @@ def create_admin_event_reservation(db: Session, req: AdminEventConfirmationReque
 
         # 2. RESOLVE SUBGROUPS (Convert "C;1" to objects)
         all_subgroup_ids = groups_from_specialization(db, req.subgroup_ids)
+        subgroups_objects = db.query(Subgroup).filter(Subgroup.id.in_(all_subgroup_ids)).all()
 
         # 3. CONFLICT CHECK (Hybrid logic: Room, Multiple Professors, Multiple Subgroups)
         # Query for existing overlapping reservations
@@ -233,7 +234,7 @@ def create_admin_event_reservation(db: Session, req: AdminEventConfirmationReque
             calendar_date=req.reservation_date,
             required_capacity=req.number_of_people,
             status="reserved",
-            subgroups=all_subgroup_ids
+            subgroups=subgroups_objects
         )
 
         # Add participating professors to the junction table
