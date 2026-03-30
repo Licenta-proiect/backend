@@ -104,13 +104,13 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
     """
     now = get_now()
     today = now.date()
-    
+
     # Generate the list of dates to check
     delta = req.end_date - req.start_date
     days_to_check = []
     for i in range(delta.days + 1):
         d = req.start_date + timedelta(days=i)
-        if d >= today: # Skip past dates
+        if d > today: 
             days_to_check.append(d)
 
     final_report = []
@@ -124,11 +124,6 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
         END_DAY = 21 * 60
         duration_min = req.duration * 60
         
-        # If the target date is TODAY, we cannot search in the past hours
-        if target_date == today:
-            current_minutes = (now.hour * 60) + now.minute
-            START_LIMIT = max(START_LIMIT, current_minutes + 30) # 30 min buffer
-
         day_results = []
         
         for rid in req.room_ids:
@@ -170,14 +165,14 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
                     current_search_start = f_start + 60 # Hourly steps
                 else:
                     break
-                
-            # Only add the day to the report if free slots were found
+        
+        # Only add the day to the report if free slots were found
         if day_results:
             final_report.append({
                 "date": target_date.strftime("%Y-%m-%d"),
                 "options": day_results
-            })
-
+            })  
+            
     return final_report
 
 if __name__ == "__main__":
@@ -187,10 +182,10 @@ if __name__ == "__main__":
         req = AdminEventRequest(
             subject="Test Admin Event",
             room_ids=[66], 
-            specialization_years=["C;2"], 
+            specialization_years=["C;1"], 
             professor_ids=[68], 
             start_date=date(2026, 6, 1), 
-            end_date=date(2026, 6, 3),
+            end_date=date(2026, 6, 1),
             duration=2,
             number_of_people=20,
             activity_type="event"
@@ -200,7 +195,7 @@ if __name__ == "__main__":
         results = find_admin_free_slots(db, req)
 
         for day in results:
-            print(f"\n📅 {day['day_name']} ({day['date']}):")
+            print(f"\n📅({day['date']}):")
             for slot in day['options']:
                 print(f"   📍 Room: {slot['room_name']} | {slot['start_time']}:00 - {slot['end_time']}:00")
 
