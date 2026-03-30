@@ -2,7 +2,7 @@
 from datetime import datetime, date
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from app.models.models import Schedule, Subgroup, Room, Reservation, AcademicCalendar
+from app.models.models import Schedule, Subgroup, Professor, Room, Reservation, AcademicCalendar
 from app.schemas.user import AdminEventRequest
 from ortools.sat.python import cp_model
 from .alternative_slot import format_row, parse_weeks_from_info
@@ -34,28 +34,30 @@ def get_admin_constraints(db: Session, req: AdminEventRequest):
     """
     semester, week_no = get_academic_context(db, req.reservation_date)
     is_during_semester = semester is not None
-    day_idx = req.reservation_date.isoweekday() # 1=Mon, 7=Sun
+    day_idx = req.reservation_date.isoweekday()
 
-    # 1. Map Specialization-Year strings to Subgroup IDs
-    subgroup_ids = []
+    # 1. Map Specialization-Year strings to Subgroup IDs (FIXED: use extend)
+    all_subgroup_ids = []
     for item in req.specialization_years:
         try:
+            # Consistent with frontend SPEC-YEAR
             spec, year = item.split(";")
-            subgroup_ids = db.query(Subgroup.id).filter(
+            groups = db.query(Subgroup.id).filter(
                 func.lower(Subgroup.specialization_short_name) == func.lower(spec),
                 Subgroup.study_year == int(year)
             ).all()
+            all_subgroup_ids.extend([g[0] for g in groups])
         except ValueError: continue
 
     prof_tags = [f"p{pid}" for pid in req.professor_ids]
-    group_tags = [f"g{gid}" for gid in subgroup_ids]
+    group_tags = [f"g{gid}" for gid in all_subgroup_ids]
     room_tags = [f"s{rid}" for rid in req.room_ids]
     
     prof_blocks = []
     group_blocks = []
     room_blocks = []
 
-    # 2. LOAD FROM SCHEDULE (Only if date is within a semester week)
+    # 2. LOAD FROM SCHEDULE
     if is_during_semester:
         all_tags = prof_tags + group_tags + room_tags
         schedule_data = db.query(Schedule).filter(
@@ -71,29 +73,23 @@ def get_admin_constraints(db: Session, req: AdminEventRequest):
                 elif r.id_url in group_tags: group_blocks.append(row)
                 elif r.id_url in room_tags: room_blocks.append(row)
 
-    # 3. LOAD FROM RESERVATIONS (Always)
-    # We fetch all active reservations for the specific date
+    # 3. LOAD FROM RESERVATIONS
     reservations = db.query(Reservation).filter(
         Reservation.calendar_date == req.reservation_date,
         Reservation.status == "reserved"
     ).all()
 
     for res in reservations:
-        # Check Room overlaps
         if res.room_id in req.room_ids:
             room_blocks.append(format_reservation_to_schedule(res, f"s{res.room_id}"))
         
-        # Check Professor overlaps
         if res.professor_id in req.professor_ids:
             prof_blocks.append(format_reservation_to_schedule(res, f"p{res.professor_id}"))
         
-        # Check Subgroup overlaps
         res_subgroup_ids = [sg.id for sg in res.subgroups]
-        for gid in subgroup_ids:
+        for gid in all_subgroup_ids:
             if gid in res_subgroup_ids:
                 group_blocks.append(format_reservation_to_schedule(res, f"g{gid}"))
-                # We break here for this reservation to avoid duplicates if multiple 
-                # subgroups of the same request are in the same reservation
                 break
 
     return {
@@ -158,3 +154,33 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
                 break
                 
     return results
+
+if __name__ == "__main__":
+    from app.db.session import SessionLocal
+    db = SessionLocal()
+    try:
+        req = AdminEventRequest(
+            subject="Test Admin Event",
+            room_ids=[66], 
+            specialization_years=["C;3"], 
+            professor_ids=[135], 
+            reservation_date=date(2026, 6, 1), 
+            duration=2,
+            number_of_people=20,
+            activity_type="event"
+        )
+
+        print(f"🚀 Testing Admin Search for date: {req.reservation_date}")
+        results = find_admin_free_slots(db, req)
+
+        if not results:
+            print("📭 No free slots found for the given criteria.")
+        else:
+            print(f"✅ Found {len(results)} potential slots:")
+            for slot in results:
+                print(f"   📍 Room: {slot['room_name']} | Time: {slot['start_time']}:00 - {slot['end_time']}:00")
+
+    except Exception as e:
+        print(f"❌ Error during test: {e}")
+    finally:
+        db.close()
