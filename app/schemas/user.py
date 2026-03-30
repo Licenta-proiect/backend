@@ -125,3 +125,27 @@ class WeeksRequest(BaseModel):
 
     class Config:
         populate_by_name = True
+
+class AdminEventRequest(BaseModel):
+    subject: str = Field(..., min_length=1, description="The name or title of the event")
+    room_ids: List[int] = Field(..., alias="room_ids", description="List of room IDs to be reserved")
+    specialization_years: List[str] = Field(
+        default=[], 
+        alias="specialization_years", 
+        description="List of specialization-year strings, e.g., 'AIA-2'"
+    )
+    
+    professor_ids: List[int] = Field(
+        default=[], 
+        alias="professor_ids", 
+        description="List of additional participating professor IDs"
+    )
+    
+    reservation_date: date = Field(..., alias="reservation_date")
+    duration: int = Field(..., ge=1, le=12, description="Duration of the event in hours")
+    number_of_people: int = Field(0, alias="number_of_people", ge=0)
+    activity_type: str = Field("event", alias="activity_type")
+
+    class Config:
+        populate_by_name = True
+        from_attributes = True
