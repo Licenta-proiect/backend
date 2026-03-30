@@ -9,6 +9,31 @@ from .alternative_slot import format_row, parse_weeks_from_info
 from .free_slot import format_reservation_to_schedule
 from app.utils.time_helper import get_now
 
+def groups_from_specialization (req: AdminEventRequest):
+    parsed_items = []
+    spec_names = []
+
+    for item in req.specialization_years:
+        try:
+            spec, year = item.split(";")
+            spec = spec.strip()
+            parsed_items.append((spec.lower(), int(year)))
+            spec_names.append(spec.lower())
+        except (ValueError, IndexError):
+            continue
+
+    all_subgroup_ids = []
+    if parsed_items:
+        candidate_groups = db.query(Subgroup.id, Subgroup.specialization_short_name, Subgroup.study_year).filter(
+            func.lower(Subgroup.specialization_short_name).in_(spec_names)
+        ).all()
+        
+        for g_id, g_spec, g_year in candidate_groups:
+            if (g_spec.lower(), g_year) in parsed_items:
+                all_subgroup_ids.append(g_id)
+
+    return all_subgroup_ids
+
 def get_academic_context(db: Session, target_date: date):
     """
     Checks if a specific date falls within a lecture week (1-14).
@@ -38,27 +63,7 @@ def get_admin_constraints_for_day(db: Session, req: AdminEventRequest, target_da
     day_idx = target_date.isoweekday()
 
     # 1. Map Specialization-Year strings to Subgroup IDs (FIXED: use extend)
-    parsed_items = []
-    spec_names = []
-
-    for item in req.specialization_years:
-        try:
-            spec, year = item.split(";")
-            spec = spec.strip()
-            parsed_items.append((spec.lower(), int(year)))
-            spec_names.append(spec.lower())
-        except (ValueError, IndexError):
-            continue
-
-    all_subgroup_ids = []
-    if parsed_items:
-        candidate_groups = db.query(Subgroup.id, Subgroup.specialization_short_name, Subgroup.study_year).filter(
-            func.lower(Subgroup.specialization_short_name).in_(spec_names)
-        ).all()
-        
-        for g_id, g_spec, g_year in candidate_groups:
-            if (g_spec.lower(), g_year) in parsed_items:
-                all_subgroup_ids.append(g_id)
+    all_subgroup_ids = groups_from_specialization(req)
 
     prof_tags = [f"p{pid}" for pid in req.professor_ids]
     group_tags = [f"g{gid}" for gid in all_subgroup_ids]
