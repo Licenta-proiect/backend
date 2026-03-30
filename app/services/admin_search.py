@@ -2,11 +2,12 @@
 from datetime import datetime, date
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from app.models.models import Schedule, Subgroup, Professor, Room, Reservation, AcademicCalendar
+from app.models.models import Schedule, Subgroup, Room, Reservation, AcademicCalendar
 from app.schemas.user import AdminEventRequest
 from ortools.sat.python import cp_model
 from .alternative_slot import format_row, parse_weeks_from_info
 from .free_slot import format_reservation_to_schedule
+from app.utils.time_helper import get_now
 
 def get_academic_context(db: Session, target_date: date):
     """
@@ -102,6 +103,11 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
     """
     Main entry point for the Admin CP-SAT Solver.
     """
+    now = get_now()
+    today = now.date()
+    if req.reservation_date < today:
+        return []
+
     constraints = get_admin_constraints(db, req)
     
     START_DAY, END_DAY = 8 * 60, 21 * 60
@@ -162,9 +168,9 @@ if __name__ == "__main__":
         req = AdminEventRequest(
             subject="Test Admin Event",
             room_ids=[66], 
-            specialization_years=["C;3"], 
-            professor_ids=[135], 
-            reservation_date=date(2026, 6, 1), 
+            specialization_years=["C;2"], 
+            professor_ids=[68], 
+            reservation_date=date(2026, 6, 3), 
             duration=2,
             number_of_people=20,
             activity_type="event"
