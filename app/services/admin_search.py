@@ -40,12 +40,11 @@ def get_admin_constraints(db: Session, req: AdminEventRequest):
     subgroup_ids = []
     for item in req.specialization_years:
         try:
-            spec, year = item.split("-")
-            groups = db.query(Subgroup).filter(
+            spec, year = item.split(";")
+            subgroup_ids = db.query(Subgroup.id).filter(
                 func.lower(Subgroup.specialization_short_name) == func.lower(spec),
                 Subgroup.study_year == int(year)
             ).all()
-            subgroup_ids.extend([g.id for g in groups])
         except ValueError: continue
 
     prof_tags = [f"p{pid}" for pid in req.professor_ids]
@@ -80,8 +79,6 @@ def get_admin_constraints(db: Session, req: AdminEventRequest):
     ).all()
 
     for res in reservations:
-        # Format once, then distribute to appropriate block lists
-        
         # Check Room overlaps
         if res.room_id in req.room_ids:
             room_blocks.append(format_reservation_to_schedule(res, f"s{res.room_id}"))
@@ -151,7 +148,7 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
                 f_start = solver.Value(start_var)
                 results.append({
                     "room_id": rid,
-                    "room_name": room_obj.name if room_obj else f"Room {rid}",
+                    "room_name": room_obj.name,
                     "start_time": f_start // 60,
                     "end_time": (f_start + duration_min) // 60,
                     "date": req.reservation_date.strftime("%Y-%m-%d")
