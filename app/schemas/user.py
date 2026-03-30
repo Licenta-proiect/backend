@@ -149,3 +149,17 @@ class AdminEventRequest(BaseModel):
     class Config:
         populate_by_name = True
         from_attributes = True
+
+class AdminEventConfirmationRequest(BaseModel):
+    subject: str
+    room_id: int = Field(..., alias="roomId")
+    professor_ids: List[int] = Field(default=[], alias="professorIds")
+    subgroup_ids: List[int] = Field(default=[], alias="subgroupIds")
+    reservation_date: date = Field(..., alias="reservationDate")
+    start_hour: int = Field(..., alias="startHour")  
+    duration: int = Field(...)  
+    number_of_people: int = Field(0, alias="numberOfPeople")
+    activity_type: str = Field("event", alias="activityType")
+
+    class Config:
+        populate_by_name = True

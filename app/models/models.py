@@ -139,7 +139,7 @@ class Reservation(Base):
     start_time_minutes = Column(Integer, nullable=False) 
     duration = Column(Integer, nullable=False) 
     day_of_week = Column(Integer, nullable=False) 
-    week_number = Column(Integer, nullable=False) 
+    week_number = Column(Integer, nullable=True) 
     calendar_date = Column(Date, nullable=False)
     required_capacity = Column(Integer, default=0)
     

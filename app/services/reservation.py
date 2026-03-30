@@ -1,8 +1,10 @@
 # app\services\reservation.py
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
-from app.models.models import Reservation, Subgroup, Professor, Room, Schedule
-from app.schemas.user import SlotReservationRequest, ReservationCancellationRequest
+from app.models.models import AcademicCalendar, Reservation, Subgroup, Professor, Room, Schedule
+from app.schemas.user import AdminEventConfirmationRequest, SlotReservationRequest, ReservationCancellationRequest
 from app.services.free_slot import check_subject_existence
 from app.utils.time_helper import get_now
 
@@ -168,6 +170,55 @@ def cancel_reservation(db: Session, req: ReservationCancellationRequest):
     except Exception as e:
         db.rollback()
         return {"error": f"Eroare la anulare: {str(e)}"}
+
+def create_admin_event_reservation(db: Session, req: AdminEventConfirmationRequest):
+    """
+    Creates a new event reservation for an administrator.
+    Handles junction tables for subgroups and additional professors.
+    """
+    
+    # 1. Determine day of the week (1=Mon, 7=Sun)
+    day_of_week = req.reservation_date.isoweekday()
+
+    # 2. Create the base Reservation object
+    # week_number is set to None (or a value if provided in req) as it is nullable
+    new_reservation = Reservation(
+        room_id=req.room_id,
+        subject=req.subject,
+        type=req.activity_type,
+        start_time_minutes=req.start_hour,
+        duration=req.duration,
+        day_of_week=day_of_week,
+        week_number=None,  # Nullable, as academic context logic was removed
+        calendar_date=req.reservation_date,
+        required_capacity=req.number_of_people,
+        status="reserved"
+    )
+
+    # 3. Populate Junction Tables using relationship attributes
+    
+    # Add participants/subgroups
+    if req.subgroup_ids:
+        subgroups = db.query(Subgroup).filter(Subgroup.id.in_(req.subgroup_ids)).all()
+        new_reservation.subgroups = subgroups
+
+    # Add participating professors
+    if req.professor_ids:
+        professors = db.query(Professor).filter(Professor.id.in_(req.professor_ids)).all()
+        new_reservation.additional_professors = professors
+
+    # 4. Commit to Database
+    try:
+        db.add(new_reservation)
+        db.commit()
+        db.refresh(new_reservation)
+        return {
+            "status": "success", 
+            "reservation_id": new_reservation.id
+        }
+    except Exception as e:
+        db.rollback()
+        return {"error": str(e)}
 
 def get_teacher_reservations(db: Session, email: str):
     """

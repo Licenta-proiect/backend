@@ -2,10 +2,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.schemas.user import SlotReservationRequest, FreeSlotRequest, ReservationCancellationRequest
+from app.schemas.user import AdminEventConfirmationRequest, SlotReservationRequest, FreeSlotRequest, ReservationCancellationRequest
 from app.models.models import User
 from app.services.auth import get_current_user
-from app.services.reservation import create_slot_reservation, cancel_reservation
+from app.services.reservation import create_admin_event_reservation, create_slot_reservation, cancel_reservation
 from app.services.free_slot import get_schedule_and_reservation_data, find_free_slots_cp_sat, group_slots_for_ui
 from app.services.future_weeks import get_future_weeks_logic
 from app.services.admin_search import find_admin_free_slots
@@ -165,3 +165,26 @@ def search_admin_event_slots(
         },
         "days": results
     }
+
+@router.post("/confirm-admin-event")
+def confirm_admin_event(
+    req: AdminEventConfirmationRequest, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    The route for the administrator who acknowledges and saves the event.
+    """
+    # Security: Only administrators can use this hybrid search
+    if current_user.role != UserRole.ADMIN.value:
+        raise HTTPException(
+            status_code=403, 
+            detail="Doar administratorii pot rezerva evenimente."
+        )
+
+    result = create_admin_event_reservation(db, req)
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return result
