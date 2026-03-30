@@ -91,7 +91,7 @@ async def get_groups_specialization(db: Session = Depends(get_db)):
     flat_list = [
         {
             "label": f"{spec} an {year}",
-            "value": f"{spec}-{year}"
+            "value": f"{spec};{year}"
         } 
         for spec, year in results
     ]
