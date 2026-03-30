@@ -1,5 +1,5 @@
 # app\services\admin_search.py
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.models.models import Schedule, Subgroup, Room, Reservation, AcademicCalendar
@@ -28,14 +28,14 @@ def get_academic_context(db: Session, target_date: date):
                 
     return None, None
 
-def get_admin_constraints(db: Session, req: AdminEventRequest):
+def get_admin_constraints_for_day(db: Session, req: AdminEventRequest, target_date: date):
     """
     Collects constraints from Schedule (if in semester) and Reservations.
     Uses format_reservation_to_schedule for data normalization.
     """
-    semester, week_no = get_academic_context(db, req.reservation_date)
+    semester, week_no = get_academic_context(db, target_date)
     is_during_semester = semester is not None
-    day_idx = req.reservation_date.isoweekday()
+    day_idx = target_date.isoweekday()
 
     # 1. Map Specialization-Year strings to Subgroup IDs (FIXED: use extend)
     all_subgroup_ids = []
@@ -54,9 +54,7 @@ def get_admin_constraints(db: Session, req: AdminEventRequest):
     group_tags = [f"g{gid}" for gid in all_subgroup_ids]
     room_tags = [f"s{rid}" for rid in req.room_ids]
     
-    prof_blocks = []
-    group_blocks = []
-    room_blocks = []
+    prof_blocks, group_blocks, room_blocks = [], [], []
 
     # 2. LOAD FROM SCHEDULE
     if is_during_semester:
@@ -76,7 +74,7 @@ def get_admin_constraints(db: Session, req: AdminEventRequest):
 
     # 3. LOAD FROM RESERVATIONS
     reservations = db.query(Reservation).filter(
-        Reservation.calendar_date == req.reservation_date,
+        Reservation.calendar_date == target_date,
         Reservation.status == "reserved"
     ).all()
 
@@ -101,65 +99,86 @@ def get_admin_constraints(db: Session, req: AdminEventRequest):
 
 def find_admin_free_slots(db: Session, req: AdminEventRequest):
     """
-    Main entry point for the Admin CP-SAT Solver.
+    Main entry point. Iterates through each day in the range [start_date, end_date].
+    Returns a list of days, each containing a list of free slots.
     """
     now = get_now()
     today = now.date()
-    if req.reservation_date < today:
-        return []
-
-    constraints = get_admin_constraints(db, req)
     
-    START_DAY, END_DAY = 8 * 60, 21 * 60
-    duration_min = req.duration * 60
-    
-    results = []
-    
-    for rid in req.room_ids:
-        # Capacity check
-        room_obj = db.query(Room).filter(Room.id == rid).first()
-        if req.number_of_people > 0 and room_obj and room_obj.capacity < req.number_of_people:
-            continue
+    # Generate the list of dates to check
+    delta = req.end_date - req.start_date
+    days_to_check = []
+    for i in range(delta.days + 1):
+        d = req.start_date + timedelta(days=i)
+        if d >= today: # Skip past dates
+            days_to_check.append(d)
 
-        model = cp_model.CpModel()
-        start_var = model.NewIntVar(START_DAY, END_DAY - duration_min, 'start')
-        end_var = model.NewIntVar(START_DAY + duration_min, END_DAY, 'end')
-        model.Add(end_var == start_var + duration_min)
+    final_report = []
 
-        # Merge blocks: This specific room + all selected professors + all selected subgroups
-        relevant_blocks = constraints['professor'] + constraints['subgroups'] + \
-                          [b for b in constraints['rooms'] if b['idURL'] == f"s{rid}"]
-
-        for block in relevant_blocks:
-            b_start = int(block['startHour'])
-            b_end = b_start + int(block['duration'])
-            
-            o1 = model.NewBoolVar('o1')
-            o2 = model.NewBoolVar('o2')
-            model.Add(end_var <= b_start).OnlyEnforceIf(o1)
-            model.Add(start_var >= b_end).OnlyEnforceIf(o2)
-            model.AddBoolOr([o1, o2])
-
-        solver = cp_model.CpSolver()
-        current_search_start = START_DAY
+    for target_date in days_to_check:
+        # Collect constraints for THIS specific day
+        constraints = get_admin_constraints_for_day(db, req, target_date)
         
-        while current_search_start <= (END_DAY - duration_min):
-            model.Add(start_var >= current_search_start)
-            status = solver.Solve(model)
-            if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-                f_start = solver.Value(start_var)
-                results.append({
-                    "room_id": rid,
-                    "room_name": room_obj.name,
-                    "start_time": f_start // 60,
-                    "end_time": (f_start + duration_min) // 60,
-                    "date": req.reservation_date.strftime("%Y-%m-%d")
-                })
-                current_search_start = f_start + 60 # Step forward
-            else:
-                break
+        # Solver limits
+        START_LIMIT = 8 * 60
+        END_DAY = 21 * 60
+        duration_min = req.duration * 60
+        
+        # If the target date is TODAY, we cannot search in the past hours
+        if target_date == today:
+            current_minutes = (now.hour * 60) + now.minute
+            START_LIMIT = max(START_LIMIT, current_minutes + 30) # 30 min buffer
+
+        day_results = []
+        
+        for rid in req.room_ids:
+            room_obj = db.query(Room).filter(Room.id == rid).first()
+            if req.number_of_people > 0 and room_obj and room_obj.capacity < req.number_of_people:
+                continue
+
+            model = cp_model.CpModel()
+            start_var = model.NewIntVar(START_LIMIT, END_DAY - duration_min, 'start')
+            end_var = model.NewIntVar(START_LIMIT + duration_min, END_DAY, 'end')
+            model.Add(end_var == start_var + duration_min)
+
+            relevant_blocks = constraints['professor'] + constraints['subgroups'] + \
+                              [b for b in constraints['rooms'] if b['idURL'] == f"s{rid}"]
+
+            for block in relevant_blocks:
+                b_start = int(block['startHour'])
+                b_end = b_start + int(block['duration'])
                 
-    return results
+                o1, o2 = model.NewBoolVar('o1'), model.NewBoolVar('o2')
+                model.Add(end_var <= b_start).OnlyEnforceIf(o1)
+                model.Add(start_var >= b_end).OnlyEnforceIf(o2)
+                model.AddBoolOr([o1, o2])
+
+            solver = cp_model.CpSolver()
+            current_search_start = START_LIMIT
+            
+            while current_search_start <= (END_DAY - duration_min):
+                model.Add(start_var >= current_search_start)
+                status = solver.Solve(model)
+                if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+                    f_start = solver.Value(start_var)
+                    day_results.append({
+                        "room_id": rid,
+                        "room_name": room_obj.name if room_obj else f"Sala {rid}",
+                        "start_time": f_start // 60,
+                        "end_time": (f_start + duration_min) // 60,
+                    })
+                    current_search_start = f_start + 60 # Hourly steps
+                else:
+                    break
+                
+            # Only add the day to the report if free slots were found
+        if day_results:
+            final_report.append({
+                "date": target_date.strftime("%Y-%m-%d"),
+                "options": day_results
+            })
+
+    return final_report
 
 if __name__ == "__main__":
     from app.db.session import SessionLocal
@@ -170,23 +189,22 @@ if __name__ == "__main__":
             room_ids=[66], 
             specialization_years=["C;2"], 
             professor_ids=[68], 
-            reservation_date=date(2026, 6, 3), 
+            start_date=date(2026, 6, 1), 
+            end_date=date(2026, 6, 3),
             duration=2,
             number_of_people=20,
             activity_type="event"
         )
 
-        print(f"🚀 Testing Admin Search for date: {req.reservation_date}")
+        print(f"🚀 Testing Admin Range Search: {req.start_date} to {req.end_date}")
         results = find_admin_free_slots(db, req)
 
-        if not results:
-            print("📭 No free slots found for the given criteria.")
-        else:
-            print(f"✅ Found {len(results)} potential slots:")
-            for slot in results:
-                print(f"   📍 Room: {slot['room_name']} | Time: {slot['start_time']}:00 - {slot['end_time']}:00")
+        for day in results:
+            print(f"\n📅 {day['day_name']} ({day['date']}):")
+            for slot in day['options']:
+                print(f"   📍 Room: {slot['room_name']} | {slot['start_time']}:00 - {slot['end_time']}:00")
 
     except Exception as e:
-        print(f"❌ Error during test: {e}")
+        print(f"❌ Error: {e}")
     finally:
         db.close()
