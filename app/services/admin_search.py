@@ -1,5 +1,6 @@
 # app\services\admin_search.py
 from datetime import datetime, date, timedelta
+from typing import List
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.models.models import Schedule, Subgroup, Room, Reservation, AcademicCalendar
@@ -9,11 +10,11 @@ from .alternative_slot import format_row, parse_weeks_from_info
 from .free_slot import format_reservation_to_schedule
 from app.utils.time_helper import get_now
 
-def groups_from_specialization (req: AdminEventRequest):
+def groups_from_specialization(db: Session, specialization_years: List[str]):
     parsed_items = []
     spec_names = []
 
-    for item in req.specialization_years:
+    for item in specialization_years:
         try:
             spec, year = item.split(";")
             spec = spec.strip()
@@ -63,7 +64,7 @@ def get_admin_constraints_for_day(db: Session, req: AdminEventRequest, target_da
     day_idx = target_date.isoweekday()
 
     # 1. Map Specialization-Year strings to Subgroup IDs (FIXED: use extend)
-    all_subgroup_ids = groups_from_specialization(req)
+    all_subgroup_ids = groups_from_specialization(db, req.specialization_years)
 
     prof_tags = [f"p{pid}" for pid in req.professor_ids]
     group_tags = [f"g{gid}" for gid in all_subgroup_ids]

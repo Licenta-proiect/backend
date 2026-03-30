@@ -1,10 +1,9 @@
 # app\services\reservation.py
-from datetime import datetime
-
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
-from app.models.models import AcademicCalendar, Reservation, Subgroup, Professor, Room, Schedule
+from app.models.models import Reservation, Room, Subgroup, Professor, Schedule
 from app.schemas.user import AdminEventConfirmationRequest, SlotReservationRequest, ReservationCancellationRequest
+from app.services.admin_search import groups_from_specialization
 from app.services.free_slot import check_subject_existence
 from app.utils.time_helper import get_now
 
@@ -173,65 +172,88 @@ def cancel_reservation(db: Session, req: ReservationCancellationRequest):
 
 def create_admin_event_reservation(db: Session, req: AdminEventConfirmationRequest):
     """
-    Creates a new event reservation for an administrator.
-    Handles junction tables for subgroups and additional professors.
+    Creates an admin event reservation with full conflict validation.
     """
-    
-    # 1. Determine day of the week (1=Mon, 7=Sun)
-    day_of_week = req.reservation_date.isoweekday()
-
-    # 2. Create the base Reservation object
-    # week_number is set to None (or a value if provided in req) as it is nullable
-    new_reservation = Reservation(
-        room_id=req.room_id,
-        subject=req.subject,
-        type=req.activity_type,
-        start_time_minutes=req.start_hour * 60,
-        duration=req.duration * 60,
-        day_of_week=day_of_week,
-        week_number=None,  # Nullable, as academic context logic was removed
-        calendar_date=req.reservation_date,
-        required_capacity=req.number_of_people,
-        status="reserved"
-    )
-
-    # 3. Populate Junction Tables using relationship attributes
-    # Add participants/subgroups
-    if req.subgroup_ids:
-        all_matched_subgroups = []
-        
-        for entry in req.subgroup_ids:
-            try:
-                spec_name, year_val = entry.split(";")
-                
-                subgroups = db.query(Subgroup).filter(
-                    func.lower(Subgroup.specialization_short_name) == func.lower(spec_name.strip()),
-                    Subgroup.study_year == int(year_val.strip())
-                ).all()
-                
-                all_matched_subgroups.extend(subgroups)
-            except (ValueError, IndexError):
-                continue 
-        
-        new_reservation.subgroups = all_matched_subgroups
-
-    # Add participating professors
-    if req.professor_ids:
-        professors = db.query(Professor).filter(Professor.id.in_(req.professor_ids)).all()
-        new_reservation.additional_professors = professors
-
-    # 4. Commit to Database
     try:
+        # 1. TIME CHECK (Prevent past reservations)
+        now = get_now()
+        if req.reservation_date < now.date():
+            return {"error": "Nu se pot face rezervări pentru zile care au trecut."}
+
+        start_minutes = req.start_hour * 60
+        duration_minutes = req.duration * 60
+        end_minutes = start_minutes + duration_minutes
+
+        if req.reservation_date == now.date() and start_minutes < (now.hour * 60 + now.minute):
+            return {"error": "Nu se pot face rezervări pentru un interval orar care a început deja."}
+
+        # 2. RESOLVE SUBGROUPS (Convert "C;1" to objects)
+        all_subgroup_ids = groups_from_specialization(db, req.subgroup_ids)
+
+        # 3. CONFLICT CHECK (Hybrid logic: Room, Multiple Professors, Multiple Subgroups)
+        # Query for existing overlapping reservations
+        conflict = db.query(Reservation).filter(
+            Reservation.calendar_date == req.reservation_date,
+            func.lower(Reservation.status) == "reserved",
+            Reservation.start_time_minutes < end_minutes,
+            (Reservation.start_time_minutes + Reservation.duration) > start_minutes
+        ).filter(
+            or_(
+                # Room overlap
+                Reservation.room_id == req.room_id,
+                # Any of the participating professors (as main OR additional)
+                Reservation.professor_id.in_(req.professor_ids),
+                Reservation.additional_professors.any(Professor.id.in_(req.professor_ids)),
+                # Any of the subgroups
+                Reservation.subgroups.any(Subgroup.id.in_(all_subgroup_ids))
+            )
+        ).first()
+
+        if conflict:
+            if conflict.room_id == req.room_id:
+                msg = f"Sala este deja ocupată"
+            else:
+                msg = f"Conflict detectat cu rezervarea existentă: {conflict.subject}"
+            return {"error": msg}
+
+        # 4. CAPACITY CHECK (Optional but recommended)
+        room_obj = db.query(Room).filter(Room.id == req.room_id).first()
+        if room_obj and req.number_of_people > room_obj.capacity:
+            return {"error": f"Capacitatea sălii ({room_obj.capacity}) este mai mică decât numărul de persoane ({req.number_of_people})."}
+
+        # 5. CREATE RESERVATION
+        new_reservation = Reservation(
+            room_id=req.room_id,
+            subject=req.subject,
+            type=req.activity_type,
+            start_time_minutes=start_minutes,
+            duration=duration_minutes,
+            day_of_week=req.reservation_date.isoweekday(),
+            week_number=None,
+            calendar_date=req.reservation_date,
+            required_capacity=req.number_of_people,
+            status="reserved",
+            subgroups=all_subgroup_ids
+        )
+
+        # Add participating professors to the junction table
+        if req.professor_ids:
+            professors_obj = db.query(Professor).filter(Professor.id.in_(req.professor_ids)).all()
+            new_reservation.additional_professors = professors_obj
+
         db.add(new_reservation)
         db.commit()
         db.refresh(new_reservation)
+        
         return {
             "status": "success", 
-            "reservation_id": new_reservation.id
+            "reservation_id": new_reservation.id,
+            "message": "Evenimentul a fost programat și verificat cu succes."
         }
+
     except Exception as e:
         db.rollback()
-        return {"error": str(e)}
+        return {"error": f"Internal Server Error: {str(e)}"}
 
 def get_teacher_reservations(db: Session, email: str):
     """
