@@ -18,6 +18,13 @@ reservations_subgroups = Table(
     Column("subgroup_id", Integer, ForeignKey("subgroups.id"), primary_key=True),
 )
 
+reservations_professors = Table(
+    "reservations_professors",
+    Base.metadata,
+    Column("reservation_id", Integer, ForeignKey("reservations.id"), primary_key=True),
+    Column("professor_id", Integer, ForeignKey("professors.id"), primary_key=True),
+)
+
 # --- MAIN MODELS ---
 
 class Faculty(Base):
@@ -47,6 +54,7 @@ class Professor(Base):
     faculty = relationship("Faculty", back_populates="professors")
     schedule = relationship("Schedule", back_populates="professor")
     main_reservations = relationship("Reservation", back_populates="main_professor")
+    participating_events = relationship("Reservation", secondary=reservations_professors, back_populates="additional_professors")
 
 class Room(Base):
     __tablename__ = "rooms"
@@ -124,7 +132,7 @@ class ProfessorEmailRequest(Base):
 class Reservation(Base):
     __tablename__ = "reservations"
     id = Column(Integer, primary_key=True)
-    professor_id = Column(Integer, ForeignKey("professors.id"), nullable=False)
+    professor_id = Column(Integer, ForeignKey("professors.id"), nullable=True)
     room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
     subject = Column(String, nullable=False)
     type = Column(String, nullable=False)
@@ -144,6 +152,8 @@ class Reservation(Base):
     room = relationship("Room", back_populates="reservations")
     
     subgroups = relationship("Subgroup", secondary=reservations_subgroups)
+
+    additional_professors = relationship("Professor", secondary=reservations_professors, back_populates="participating_events")
 
 class SystemStatus(Base):
     __tablename__ = "system_status"
