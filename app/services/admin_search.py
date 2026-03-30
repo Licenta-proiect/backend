@@ -197,6 +197,9 @@ if __name__ == "__main__":
         print(f"🚀 Testing Admin Range Search: {req.start_date} to {req.end_date}")
         results = find_admin_free_slots(db, req)
 
+        if results == []:
+            print("nimic")
+
         for day in results:
             print(f"\n📅({day['date']}):")
             for slot in day['options']:
