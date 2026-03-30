@@ -186,8 +186,8 @@ def create_admin_event_reservation(db: Session, req: AdminEventConfirmationReque
         room_id=req.room_id,
         subject=req.subject,
         type=req.activity_type,
-        start_time_minutes=req.start_hour,
-        duration=req.duration,
+        start_time_minutes=req.start_hour * 60,
+        duration=req.duration * 60,
         day_of_week=day_of_week,
         week_number=None,  # Nullable, as academic context logic was removed
         calendar_date=req.reservation_date,
@@ -196,11 +196,24 @@ def create_admin_event_reservation(db: Session, req: AdminEventConfirmationReque
     )
 
     # 3. Populate Junction Tables using relationship attributes
-    
     # Add participants/subgroups
     if req.subgroup_ids:
-        subgroups = db.query(Subgroup).filter(Subgroup.id.in_(req.subgroup_ids)).all()
-        new_reservation.subgroups = subgroups
+        all_matched_subgroups = []
+        
+        for entry in req.subgroup_ids:
+            try:
+                spec_name, year_val = entry.split(";")
+                
+                subgroups = db.query(Subgroup).filter(
+                    func.lower(Subgroup.specialization_short_name) == func.lower(spec_name.strip()),
+                    Subgroup.study_year == int(year_val.strip())
+                ).all()
+                
+                all_matched_subgroups.extend(subgroups)
+            except (ValueError, IndexError):
+                continue 
+        
+        new_reservation.subgroups = all_matched_subgroups
 
     # Add participating professors
     if req.professor_ids:
