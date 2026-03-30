@@ -8,6 +8,9 @@ from app.services.auth import get_current_user
 from app.services.reservation import create_slot_reservation, cancel_reservation
 from app.services.free_slot import get_schedule_and_reservation_data, find_free_slots_cp_sat, group_slots_for_ui
 from app.services.future_weeks import get_future_weeks_logic
+from app.services.admin_search import find_admin_free_slots
+from app.schemas.user import AdminEventRequest
+from app.models.models import UserRole
 
 router = APIRouter(prefix="/reservations", tags=["Reservations"])
 
@@ -119,3 +122,45 @@ def cancel_existing_reservation(
         raise HTTPException(status_code=400, detail=result["error"])
     
     return result
+
+@router.post("/search-admin-event")
+def search_admin_event_slots(
+    req: AdminEventRequest, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Endpoint dedicated to the administrator to find free slots over a date range.
+    Checks for hybrid overlaps (Schedule + Reservations).
+    """
+    
+    # 1. Security: Only administrators can use this hybrid search
+    if current_user.role != UserRole.ADMIN.value:
+        raise HTTPException(
+            status_code=403,
+            detail="Acces interzis. Doar administratorii pot planifica evenimente."
+        )
+
+    # 2. Calling the range search service
+    try:
+        results = find_admin_free_slots(db, req)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Eroare internă la procesarea solverului.")
+
+    # 3. If no slots are found, return an object with an empty list and info
+    if not results:
+        return {
+            "info": "Nu s-au găsit sloturi libere pentru criteriile selectate în acest interval.",
+            "days": []
+        }
+
+    # 4. Return structured results by days
+    return {
+        "search_context": {
+            "subject": req.subject,
+            "duration": req.duration,
+            "rooms": req.room_ids,
+            "specializations": req.specialization_years
+        },
+        "days": results
+    }
