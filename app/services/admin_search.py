@@ -31,7 +31,7 @@ def get_academic_context(db: Session, target_date: date):
 def get_admin_constraints_for_day(db: Session, req: AdminEventRequest, target_date: date):
     """
     Collects constraints from Schedule (if in semester) and Reservations.
-    Uses format_reservation_to_schedule for data normalization.
+    Takes into account both main professors and additional professors in junction tables.
     """
     semester, week_no = get_academic_context(db, target_date)
     is_during_semester = semester is not None
@@ -79,17 +79,23 @@ def get_admin_constraints_for_day(db: Session, req: AdminEventRequest, target_da
     ).all()
 
     for res in reservations:
+        # A. Check Room overlaps
         if res.room_id in req.room_ids:
             room_blocks.append(format_reservation_to_schedule(res, f"s{res.room_id}"))
         
-        if res.professor_id in req.professor_ids:
-            prof_blocks.append(format_reservation_to_schedule(res, f"p{res.professor_id}"))
+        # B. Check Professor overlaps
+        # Check if any professor we are interested in is either the owner OR an additional participant
+        additional_prof_ids = [p.id for p in res.additional_professors]
+        for pid in req.professor_ids:
+            if res.professor_id == pid or pid in additional_prof_ids:
+                prof_blocks.append(format_reservation_to_schedule(res, f"p{pid}"))
         
+        # C. Check Subgroup overlaps
         res_subgroup_ids = [sg.id for sg in res.subgroups]
         for gid in all_subgroup_ids:
             if gid in res_subgroup_ids:
                 group_blocks.append(format_reservation_to_schedule(res, f"g{gid}"))
-                break
+                break # Avoid duplicate blocks for the same group in one reservation
 
     return {
         "professor": prof_blocks,
