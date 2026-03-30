@@ -69,61 +69,34 @@ async def get_active_groups(db: Session = Depends(get_db)):
         } for g in groups
     ]
 
-@router.get("/groups-hierarchical")
-async def get_groups_hierarchical(db: Session = Depends(get_db)):
+@router.get("/groups-specialization")
+async def get_groups_specialization(db: Session = Depends(get_db)):
     """
-    Returns subgroups grouped hierarchically: Specialization -> Study Year -> Group/Subgroup.
-    Ideal for complex selectors (TreeSelect) in the Admin dashboard.
+    Returns a flat list of unique specialization and year combinations.
+    Example: [{"label": "CR - Anul 1", "value": "CR-1"}, ...]
     """
-    # 1. Fetch all subgroups that have a schedule, ordered for easier processing
-    groups = db.query(Subgroup).filter(
-        Subgroup.has_schedule == True
-    ).order_by(
+    # 1. Fetch unique combinations directly from the database
+    results = db.query(
         Subgroup.specialization_short_name, 
-        Subgroup.study_year, 
-        Subgroup.group_name.asc(), 
-        Subgroup.subgroup_index.asc()
+        Subgroup.study_year
+    ).filter(
+        Subgroup.has_schedule == True
+    ).distinct().order_by(
+        Subgroup.specialization_short_name, 
+        Subgroup.study_year
     ).all()
 
-    hierarchical_data = {}
+    # 2. Map directly to a flat list of objects
+    # Format: label for UI, value for backend logic
+    flat_list = [
+        {
+            "label": f"{spec} an {year}",
+            "value": f"{spec}-{year}"
+        } 
+        for spec, year in results
+    ]
 
-    # 2. Build the nested dictionary structure
-    for g in groups:
-        spec = g.specialization_short_name
-        year = g.study_year
-        
-        # Initialize Specialization if it doesn't exist
-        if spec not in hierarchical_data:
-            hierarchical_data[spec] = {}
-            
-        # Initialize Year within the Specialization
-        if year not in hierarchical_data[spec]:
-            hierarchical_data[spec][year] = []
-            
-        # Add the subgroup to the corresponding list
-        hierarchical_data[spec][year].append({
-            "value": g.id,
-            "label": f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index if g.subgroup_index else ''}"
-        })
-
-    # 3. Transform the dictionary into a list structure (Array of Objects) for the Frontend
-    result = []
-    for spec_name, years in hierarchical_data.items():
-        spec_node = {
-            "label": spec_name,
-            "value": spec_name,  # Unique key for the tree node
-            "children": []
-        }
-        for year_name, subgroups in years.items():
-            year_node = {
-                "label": year_name,
-                "value": f"{spec_name} {year_name}",
-                "children": subgroups
-            }
-            spec_node["children"].append(year_node)
-        result.append(spec_node)
-
-    return result
+    return flat_list
 
 @router.get("/activity-type")
 async def get_activity_types(db: Session = Depends(get_db)):
