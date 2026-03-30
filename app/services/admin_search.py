@@ -111,13 +111,9 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
     now = get_now()
     today = now.date()
 
-    # Generate the list of dates to check
     delta = req.end_date - req.start_date
-    days_to_check = []
-    for i in range(delta.days + 1):
-        d = req.start_date + timedelta(days=i)
-        if d > today: 
-            days_to_check.append(d)
+    days_to_check = [req.start_date + timedelta(days=i) for i in range(delta.days + 1) 
+                     if (req.start_date + timedelta(days=i)) > today]
 
     final_report = []
     START_DAY, END_DAY = 8 * 60, 21 * 60
@@ -125,11 +121,6 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
 
     for target_date in days_to_check:
         constraints = get_admin_constraints_for_day(db, req, target_date)
-        
-        # We generate a signature for the cache based on the blocks occupied this day
-        all_day_blocks = sorted([f"{b['idURL']}_{b['startHour']}_{b['duration']}" 
-                               for cat in constraints for b in constraints[cat]])
-        
         day_options = []
 
         for rid in req.room_ids:
@@ -137,32 +128,30 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
             if req.number_of_people > 0 and room_obj and room_obj.capacity < req.number_of_people:
                 continue
 
-            model = cp_model.CpModel()
-            start_var = model.NewIntVar(START_DAY, END_DAY - duration_min, 'start')
-            end_var = model.NewIntVar(START_DAY + duration_min, END_DAY, 'end')
-            model.Add(end_var == start_var + duration_min)
-
-            # Blocks relevant to this specific room + profiles + groups
-            relevant_blocks = constraints['professor'] + constraints['subgroups'] + \
-                              [b for b in constraints['rooms'] if b['idURL'] == f"s{rid}"]
-
-            for block in relevant_blocks:
-                b_start, b_duration = int(block['startHour']), int(block['duration'])
-                b_end = b_start + b_duration
-                
-                o1, o2 = model.NewBoolVar('o1'), model.NewBoolVar('o2')
-                model.Add(end_var <= b_start).OnlyEnforceIf(o1)
-                model.Add(start_var >= b_end).OnlyEnforceIf(o2)
-                model.AddBoolOr([o1, o2])
-
-            # Force find solutions in chronological order (Minimize)
-            model.Minimize(start_var)
-
-            solver = cp_model.CpSolver()
             current_search_start = START_DAY
             
             while current_search_start <= (END_DAY - duration_min):
-                model.Add(start_var >= current_search_start)
+                model = cp_model.CpModel()
+                
+                start_var = model.NewIntVar(current_search_start, END_DAY - duration_min, 'start')
+                end_var = model.NewIntVar(current_search_start + duration_min, END_DAY, 'end')
+                model.Add(end_var == start_var + duration_min)
+
+                relevant_blocks = constraints['professor'] + constraints['subgroups'] + \
+                                  [b for b in constraints['rooms'] if b['idURL'] == f"s{rid}"]
+
+                for block in relevant_blocks:
+                    b_start = int(block['startHour'])
+                    b_end = b_start + int(block['duration'])
+                    
+                    o1, o2 = model.NewBoolVar('o1'), model.NewBoolVar('o2')
+                    model.Add(end_var <= b_start).OnlyEnforceIf(o1)
+                    model.Add(start_var >= b_end).OnlyEnforceIf(o2)
+                    model.AddBoolOr([o1, o2])
+
+                model.Minimize(start_var)
+
+                solver = cp_model.CpSolver()
                 status = solver.Solve(model)
 
                 if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -178,6 +167,7 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
                     break
 
         if day_options:
+            day_options.sort(key=lambda x: (x['start_time']))
             final_report.append({
                 "date": target_date.strftime("%Y-%m-%d"),
                 "options": day_options
