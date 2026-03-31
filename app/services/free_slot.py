@@ -353,7 +353,7 @@ if __name__ == "__main__":
 
     # 1. Simulate the Request object
     test_req = FreeSlotRequest(
-        email="adina@eed.usv.ro",
+        email="stoicaalexandra180@gmail.com",
         subject="Criptografie şi securitate informaţională",
         group_ids=[49, 50, 51],
         room_ids=[66, 24, 30],
