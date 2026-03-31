@@ -1,5 +1,5 @@
 # app\services\reservation.py
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, func
 from app.models.models import AcademicCalendar, Reservation, Room, Subgroup, Professor, Schedule
 from app.schemas.user import AdminEventConfirmationRequest, SlotReservationRequest, ReservationCancellationRequest
@@ -310,13 +310,26 @@ def cancel_admin_event(db: Session, reservation_id: int, reason: str):
 
 def get_teacher_reservations(db: Session, email: str):
     """
-    Retrieves all reservations for a professor and calculates status (reserved/cancelled/completed).
+    Retrieves all reservations for a professor (either as the owner OR an additional participant)
+    and calculates the dynamic status (reserved/cancelled/completed).
     """
+    # Identify the professor based on email
     professor = db.query(Professor).filter(Professor.email_address == email).first()
     if not professor:
         return []
 
-    reservations = db.query(Reservation).filter(Reservation.professor_id == professor.id).all()
+    # Query reservations using hybrid logic
+    # Use joinedload to fetch relationships in a single query for performance (avoiding N+1)
+    reservations = db.query(Reservation).options(
+        joinedload(Reservation.subgroups),
+        joinedload(Reservation.room),
+        joinedload(Reservation.additional_professors)
+    ).filter(
+        or_(
+            Reservation.professor_id == professor.id,  # Case: Owner/Primary Professor
+            Reservation.additional_professors.any(Professor.id == professor.id) # Case: Additional Participant
+        )
+    ).all()
     
     now = get_now()
     today_date = now.date()
@@ -324,16 +337,16 @@ def get_teacher_reservations(db: Session, email: str):
 
     result = []
     for r in reservations:
-        status_final = r.status 
+        final_status = r.status 
 
-        # Dynamic status logic
+        # Dynamic status logic based on time
         if r.status.lower() == "reserved":
             if r.calendar_date < today_date:
-                status_final = "completed"
+                final_status = "completed"
             elif r.calendar_date == today_date:
-                end_minutes = r.start_time_minutes + r.duration
-                if current_time_minutes > end_minutes:
-                    status_final = "completed"
+                end_time_minutes = r.start_time_minutes + r.duration
+                if current_time_minutes > end_time_minutes:
+                    final_status = "completed"
 
         group_names = [f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index}" for g in r.subgroups]
 
@@ -348,7 +361,7 @@ def get_teacher_reservations(db: Session, email: str):
             "date": r.calendar_date,
             "start_hour": r.start_time_minutes // 60,
             "duration": r.duration // 60,
-            "status": status_final,
+            "status": final_status,
             "cancellation_reason": r.cancellation_reason if r.status == "cancelled" else None
         })
     
