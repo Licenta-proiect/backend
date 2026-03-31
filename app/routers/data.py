@@ -1,5 +1,4 @@
 # app\routers\data.py
-from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session

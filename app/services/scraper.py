@@ -126,7 +126,7 @@ async def populate():
                     id=p_id,
                     last_name=clean_val(p["lastName"]),
                     first_name=clean_val(p["firstName"]),       
-                    email_address=new_email,
+                    email_address=clean_val(new_email),
                     faculty_id=f_id,
                     department_name=clean_val(p["departmentName"]),
                     has_schedule=False

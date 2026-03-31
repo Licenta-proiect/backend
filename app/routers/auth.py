@@ -11,6 +11,7 @@ from app.services.auth import (
 
 from app.schemas.user import LoginResponse, ProfessorAccessRequestCreate
 from app.models.models import ProfessorEmailRequest, User
+from app.services.scraper import clean_val
 
 router = APIRouter(tags=["Authentication"])
 
@@ -82,9 +83,9 @@ async def request_professor_access(data: ProfessorAccessRequestCreate, db: Sessi
         raise HTTPException(status_code=400, detail="Există deja o cerere în curs pentru acest email.")
 
     new_request = ProfessorEmailRequest(
-        first_name=data.first_name,
-        last_name=data.last_name,
-        email=data.email
+        first_name=clean_val(data.first_name),
+        last_name=clean_val(data.last_name),
+        email=clean_val(data.email)
     )
     
     db.add(new_request)

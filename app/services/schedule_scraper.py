@@ -3,7 +3,7 @@ import random
 import httpx
 import asyncio
 from app.services.scraper import clean_val
-from sqlalchemy import distinct, func, text
+from sqlalchemy import distinct, text
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.models.models import Schedule, Professor, Room, Subgroup, Faculty

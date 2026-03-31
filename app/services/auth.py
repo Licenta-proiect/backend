@@ -1,7 +1,6 @@
 # app\services\auth.py
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from jose import jwt, JWTError
 from fastapi import Request, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -9,6 +8,7 @@ from authlib.integrations.starlette_client import OAuth
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.models import User, UserRole, Professor
+from app.services.scraper import clean_val
 
 # Load environment variables from .env
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -90,9 +90,9 @@ async def handle_google_login(user_info: dict, db: Session):
 
         # Create the new user with teacher_id if found
         user = User(
-            email=email,
-            first_name=user_info.get('given_name'),
-            last_name=user_info.get('family_name'),
+            email=clean_val(email),
+            first_name=clean_val(user_info.get('given_name')),
+            last_name=clean_val(user_info.get('family_name')),
             role=new_role,
             teacher_id=teacher_id  # Automatic link established on first login
         )

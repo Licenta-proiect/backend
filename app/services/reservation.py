@@ -4,6 +4,7 @@ from sqlalchemy import or_, func
 from app.models.models import Reservation, Room, Subgroup, Professor, Schedule
 from app.schemas.user import AdminEventConfirmationRequest, SlotReservationRequest, ReservationCancellationRequest
 from app.services.free_slot import check_subject_existence
+from app.services.scraper import clean_val
 from app.utils.time_helper import get_now
 
 def create_slot_reservation(db: Session, req: SlotReservationRequest):
@@ -112,8 +113,8 @@ def create_slot_reservation(db: Session, req: SlotReservationRequest):
         new_reservation = Reservation(
             professor_id=professor.id,
             room_id=req.room_id,
-            subject=final_subject_name,
-            type=req.activity_type,
+            subject=clean_val(final_subject_name),
+            type=clean_val(req.activity_type),
             start_time_minutes=start_minutes,
             duration=duration_minutes,
             day_of_week=req.day,
@@ -162,7 +163,7 @@ def cancel_reservation(db: Session, req: ReservationCancellationRequest):
 
     try:
         reservation.status = "cancelled"
-        reservation.cancellation_reason = req.reason
+        reservation.cancellation_reason = clean_val(req.reason)
         db.commit()
         return {"success": "Rezervarea a fost anulată cu succes."}
     except Exception as e:
@@ -229,8 +230,8 @@ def create_admin_event_reservation(db: Session, req: AdminEventConfirmationReque
         # CREATE RESERVATION
         new_reservation = Reservation(
             room_id=req.room_id,
-            subject=req.subject,
-            type=req.activity_type,
+            subject=clean_val(req.subject),
+            type=clean_val(req.activity_type),
             start_time_minutes=start_minutes,
             duration=duration_minutes,
             day_of_week=req.reservation_date.isoweekday(),

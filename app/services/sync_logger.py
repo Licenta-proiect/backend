@@ -3,6 +3,7 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from app.models.models import SyncHistory
 from app.db.session import SessionLocal
+from app.services.scraper import clean_val
 
 def cleanup_old_sync_logs(db: Session, days_to_keep: int = 150):
     """
@@ -26,8 +27,8 @@ async def run_sync_with_logging(func, sync_type: str, trigger_type: str = "Manua
     
     # 1. Create the start entry
     history = SyncHistory(
-        sync_type=sync_type,
-        trigger_type=trigger_type,
+        sync_type=clean_val(sync_type),
+        trigger_type=clean_val(trigger_type),
         start_date=datetime.now(timezone.utc),
         status="In progress"
     )

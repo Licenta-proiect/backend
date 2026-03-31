@@ -1,5 +1,5 @@
 # app\routers\admin.py
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -9,7 +9,7 @@ from app.schemas.sync import SyncSettingsUpdate
 from app.services.auth import get_current_user
 from app.models.models import User, UserRole, Professor, SyncHistory, ProfessorEmailRequest, SystemStatus
 from app.services.reservation import get_all_reservations_admin
-from app.services.scraper import populate as populate_base
+from app.services.scraper import clean_val, populate as populate_base
 from app.services.calendar_scraper import run as populate_calendar
 from app.services.schedule_scraper import populate as populate_orar
 from app.schemas.user import UserCreate, UserResponse, UserUpdate, SyncHistoryResponse
@@ -55,10 +55,10 @@ async def create_user(
     
     # 2. Initialize new user
     new_user = User(
-        last_name=user_in.last_name,
-        first_name=user_in.first_name,
-        email=user_in.email,
-        role=user_in.role
+        last_name=clean_val(user_in.last_name),
+        first_name=clean_val(user_in.first_name),
+        email=clean_val(user_in.email),
+        role=clean_val(user_in.role)
     ) 
     
     # 3. If the role is PROFESSOR, look for a match in the professors table
@@ -154,9 +154,9 @@ async def update_user(
 
     # 1. Update name/surname
     if update_data.last_name is not None:
-        user.last_name = update_data.last_name 
+        user.last_name = clean_val(update_data.last_name) 
     if update_data.first_name is not None:
-        user.first_name = update_data.first_name
+        user.first_name = clean_val(update_data.first_name)
 
     # 2. Update Email with Manual Sync
     if update_data.new_email is not None and update_data.new_email != email:
@@ -167,10 +167,10 @@ async def update_user(
         
         # Manual sync in the Professors table
         if user.professor_info:
-            user.professor_info.email_address = update_data.new_email
+            user.professor_info.email_address = clean_val(update_data.new_email)
         
         # Update the primary email
-        user.email = update_data.new_email
+        user.email = clean_val(update_data.new_email)
 
     try:
         db.commit()
@@ -254,7 +254,7 @@ async def approve_professor_request(
 
     try:
         # 4. Update professor email
-        professor.email_address = request_obj.email
+        professor.email_address = clean_val(request_obj.email)
 
         # 5. Finalize the request with success
         request_obj.status = "approved"
