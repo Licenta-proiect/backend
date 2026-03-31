@@ -14,15 +14,15 @@ class UserRole(enum.Enum):
 reservations_subgroups = Table(
     "reservations_subgroups",
     Base.metadata,
-    Column("reservation_id", Integer, ForeignKey("reservations.id"), primary_key=True),
-    Column("subgroup_id", Integer, ForeignKey("subgroups.id"), primary_key=True),
+    Column("reservation_id", Integer, ForeignKey("reservations.id"), primary_key=True, index=True),
+    Column("subgroup_id", Integer, ForeignKey("subgroups.id"), primary_key=True, index=True),
 )
 
 reservations_professors = Table(
     "reservations_professors",
     Base.metadata,
-    Column("reservation_id", Integer, ForeignKey("reservations.id"), primary_key=True),
-    Column("professor_id", Integer, ForeignKey("professors.id"), primary_key=True),
+    Column("reservation_id", Integer, ForeignKey("reservations.id"), primary_key=True, index=True),
+    Column("professor_id", Integer, ForeignKey("professors.id"), primary_key=True, index=True),
 )
 
 # --- MAIN MODELS ---
@@ -92,7 +92,7 @@ class Schedule(Base):
     room_id = Column(Integer, ForeignKey("rooms.id"), nullable=True)
     topic_long_name = Column(String)
     topic_short_name = Column(String)
-    week_day = Column(Integer)
+    week_day = Column(Integer, index=True)
     start_hour = Column(String)
     duration = Column(Integer)
     parity = Column(Integer) 
@@ -140,7 +140,7 @@ class Reservation(Base):
     duration = Column(Integer, nullable=False) 
     day_of_week = Column(Integer, nullable=False) 
     week_number = Column(Integer, nullable=True) 
-    calendar_date = Column(Date, nullable=False)
+    calendar_date = Column(Date, nullable=False, index=True)
     required_capacity = Column(Integer, default=0)
     
     status = Column(String, default="reserved")
