@@ -2,10 +2,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.schemas.user import AdminEventConfirmationRequest, SlotReservationRequest, FreeSlotRequest, ReservationCancellationRequest
+from app.schemas.user import AdminCancelEventRequest, AdminEventConfirmationRequest, SlotReservationRequest, FreeSlotRequest, ReservationCancellationRequest
 from app.models.models import User
 from app.services.auth import get_current_user
-from app.services.reservation import create_admin_event_reservation, create_slot_reservation, cancel_reservation
+from app.services.reservation import cancel_admin_event, create_admin_event_reservation, create_slot_reservation, cancel_reservation
 from app.services.free_slot import get_schedule_and_reservation_data, find_free_slots_cp_sat, group_slots_for_ui
 from app.services.future_weeks import get_future_weeks_logic
 from app.services.admin_search import find_admin_free_slots
@@ -183,6 +183,30 @@ def confirm_admin_event(
         )
 
     result = create_admin_event_reservation(db, req)
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return result
+
+@router.post("/cancel-admin-event")
+def cancel_admin_event_route(
+    req: AdminCancelEventRequest, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Endpoint for administrators to cancel any event.
+    """
+    # Security check: Must be ADMIN
+    if current_user.role != UserRole.ADMIN.value:
+        raise HTTPException(
+            status_code=403, 
+            detail="Acces interzis. Doar administratorii pot anula evenimente administrative."
+        )
+
+    # Call service
+    result = cancel_admin_event(db, req.reservation_id, req.reason)
 
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])

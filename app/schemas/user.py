@@ -163,3 +163,10 @@ class AdminEventConfirmationRequest(BaseModel):
 
     class Config:
         populate_by_name = True
+
+class AdminCancelEventRequest(BaseModel):
+    reservation_id: int = Field(..., alias="reservationId")
+    reason: str = Field("Anulat de administrator", alias="reason")
+
+    class Config:
+        populate_by_name = True

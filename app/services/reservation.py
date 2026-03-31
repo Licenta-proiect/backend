@@ -275,6 +275,38 @@ def create_admin_event_reservation(db: Session, req: AdminEventConfirmationReque
     except Exception as e:
         db.rollback()
         return {"error": f"Internal Server Error: {str(e)}"}
+    
+def cancel_admin_event(db: Session, reservation_id: int, reason: str):
+    """
+    Service to cancel any event by an administrator.
+    """
+    reservation = db.query(Reservation).filter(Reservation.id == reservation_id).first()
+    
+    if not reservation:
+        return {"error": "Evenimentul nu a fost găsit."}
+    
+    if reservation.status.lower() == "cancelled":
+        return {"error": "Acest eveniment este deja anulat."}
+
+    now = get_now()
+    today_date = now.date()
+
+    # Check if reservation is in the past
+    if reservation.calendar_date < today_date:
+        return {"error": "Nu se pot anula rezervări din zilele trecute."}
+    
+    # Check if reservation is today
+    if reservation.calendar_date == today_date:
+        return {"error": "Anularea unei rezervări nu se poate face în aceeași zi cu evenimentul."}
+
+    try:
+        reservation.status = "cancelled"
+        reservation.cancellation_reason = clean_val(reason) or "Anulat de administrator"
+        db.commit()
+        return {"success": "Evenimentul a fost anulat cu succes de către administrator."}
+    except Exception as e:
+        db.rollback()
+        return {"error": f"Eroare la anularea admin: {str(e)}"}
 
 def get_teacher_reservations(db: Session, email: str):
     """
