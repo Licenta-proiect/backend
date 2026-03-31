@@ -174,7 +174,10 @@ def get_schedule_and_reservation_data(db: Session, req: FreeSlotRequest, current
     query_reservations = db.query(Reservation).options(
         joinedload(Reservation.additional_professors),
         joinedload(Reservation.subgroups)
-    ).filter(Reservation.status == "reserved")
+    ).filter(
+        Reservation.status == "reserved",
+        Reservation.week_number != None
+    )
 
     if req.day is not None:
         query_reservations = query_reservations.filter(Reservation.day_of_week == req.day)

@@ -1,8 +1,9 @@
 # app\services\reservation.py
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
-from app.models.models import Reservation, Room, Subgroup, Professor, Schedule
+from app.models.models import AcademicCalendar, Reservation, Room, Subgroup, Professor, Schedule
 from app.schemas.user import AdminEventConfirmationRequest, SlotReservationRequest, ReservationCancellationRequest
+from app.services.admin_search import get_academic_context
 from app.services.free_slot import check_subject_existence
 from app.services.scraper import clean_val
 from app.utils.time_helper import get_now
@@ -236,6 +237,10 @@ def create_admin_event_reservation(db: Session, req: AdminEventConfirmationReque
         if room_obj and req.number_of_people > room_obj.capacity:
             return {"error": f"Capacitatea sălii ({room_obj.capacity}) este mai mică decât numărul de persoane ({req.number_of_people})."}
         '''
+        
+        # DETERMINARE WEEK_NUMBER
+        all_cal = db.query(AcademicCalendar).filter(AcademicCalendar.week_number <= 14).all()
+        semester, week_no = get_academic_context(req.reservation_date, all_cal)
 
         # CREATE RESERVATION
         new_reservation = Reservation(
@@ -245,7 +250,7 @@ def create_admin_event_reservation(db: Session, req: AdminEventConfirmationReque
             start_time_minutes=start_minutes,
             duration=duration_minutes,
             day_of_week=req.reservation_date.isoweekday(),
-            week_number=None,
+            week_number=week_no, 
             calendar_date=req.reservation_date,
             required_capacity=req.number_of_people,
             status="reserved",
