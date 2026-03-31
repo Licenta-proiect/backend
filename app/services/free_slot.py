@@ -1,7 +1,7 @@
 # app\services\free_slot.py
 from datetime import datetime
 from sqlalchemy import func, distinct
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.models.models import Schedule, Subgroup, Professor, Room, Reservation
 from app.schemas.user import FreeSlotRequest
 from app.utils.time_helper import get_now
@@ -171,7 +171,10 @@ def get_schedule_and_reservation_data(db: Session, req: FreeSlotRequest, current
     schedule_data = query_schedule.all()
 
     # COLLECT AD-HOC RESERVATIONS
-    query_reservations = db.query(Reservation).filter(Reservation.status == "reserved")
+    query_reservations = db.query(Reservation).options(
+        joinedload(Reservation.additional_professors),
+        joinedload(Reservation.subgroups)
+    ).filter(Reservation.status == "reserved")
 
     if req.day is not None:
         query_reservations = query_reservations.filter(Reservation.day_of_week == req.day)
@@ -184,12 +187,16 @@ def get_schedule_and_reservation_data(db: Session, req: FreeSlotRequest, current
     room_blocks = [format_row(r) for r in schedule_data if r.id_url in room_tags]
 
     for res in all_reservations:
-        if res.professor_id == prof_id:
-            prof_blocks.append(format_reservation_to_schedule(res, f"p{prof_id}"))
-        
+        # A. Check Room overlaps
         if res.room_id in req.room_ids:
             room_blocks.append(format_reservation_to_schedule(res, f"s{res.room_id}"))
         
+        # B. Check Professor overlaps (Titular SAU Participant Adițional)
+        additional_prof_ids = [p.id for p in res.additional_professors]
+        if res.professor_id == prof_id or prof_id in additional_prof_ids:
+            prof_blocks.append(format_reservation_to_schedule(res, f"p{prof_id}"))
+        
+        # C. Check Subgroup overlaps (Participare grupă în rezervare)
         res_group_ids = [g.id for g in res.subgroups]
         for gid in req.group_ids:
             if gid in res_group_ids:
