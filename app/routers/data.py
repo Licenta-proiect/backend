@@ -72,31 +72,40 @@ async def get_active_groups(db: Session = Depends(get_db)):
 @router.get("/groups-specialization")
 async def get_groups_specialization(db: Session = Depends(get_db)):
     """
-    Returns a flat list of unique specialization and year combinations.
-    Example: [{"label": "CR - Anul 1", "value": "CR-1"}, ...]
+    Returns a list of unique specialization and year combinations,
+    including a list of all subgroup IDs for each combination.
+    Example: [{"label": "CR an 1", "ids": [101, 102, 103]}, ...]
     """
-    # 1. Fetch unique combinations directly from the database
-    results = db.query(
-        Subgroup.specialization_short_name, 
+    # 1. Fetch all subgroups that have a schedule
+    subgroups = db.query(
+        Subgroup.id,
+        Subgroup.specialization_short_name,
         Subgroup.study_year
     ).filter(
         Subgroup.has_schedule == True
-    ).distinct().order_by(
-        Subgroup.specialization_short_name, 
+    ).order_by(
+        Subgroup.specialization_short_name,
         Subgroup.study_year
     ).all()
 
-    # 2. Map directly to a flat list of objects
-    # Format: label for UI, value for backend logic
-    flat_list = [
+    # 2. Group IDs in a dictionary
+    grouped_data = {}
+    for sg_id, spec, year in subgroups:
+        key = f"{spec} an {year}"
+        if key not in grouped_data:
+            grouped_data[key] = []
+        grouped_data[key].append(sg_id)
+
+    # 3. Transform into the desired list of objects
+    result = [
         {
-            "label": f"{spec} an {year}",
-            "value": f"{spec};{year}"
-        } 
-        for spec, year in results
+            "label": label,
+            "ids": ids
+        }
+        for label, ids in grouped_data.items()
     ]
 
-    return flat_list
+    return result
 
 @router.get("/activity-type")
 async def get_activity_types(db: Session = Depends(get_db)):
