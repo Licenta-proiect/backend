@@ -219,12 +219,18 @@ def create_admin_event_reservation(db: Session, req: AdminEventConfirmationReque
 
         if conflict:
             if conflict.room_id == req.room_id:
-                msg = f"Sala este deja ocupată"
-            else:
-                msg = f"Conflict detectat cu rezervarea existentă: {conflict.subject}"
+                msg = "Sala este deja ocupată în acest interval."
+            
+            elif (conflict.professor_id in req.professor_ids or 
+                  any(p.id in req.professor_ids for p in conflict.additional_professors)):
+                msg = "Unul dintre profesorii selectați are deja o rezervare în acest interval."
+            
+            elif any(sg.id in req.subgroup_ids for sg in conflict.subgroups):
+                msg = "Una dintre grupele selectate are deja o rezervare în acest interval."
+            
             return {"error": msg}
 
-        # CAPACITY CHECK (Optional but recommended)
+        # CAPACITY CHECK
         '''
         room_obj = db.query(Room).filter(Room.id == req.room_id).first()
         if room_obj and req.number_of_people > room_obj.capacity:
