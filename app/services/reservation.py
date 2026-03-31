@@ -379,15 +379,15 @@ def get_all_reservations_admin(db: Session):
 
     result = []
     for r in reservations:
-        status_final = r.status 
+        final_status = r.status 
 
         if r.status.lower() == "reserved":
             if r.calendar_date < today_date:
-                status_final = "completed"
+                final_status = "completed"
             elif r.calendar_date == today_date:
                 end_minutes = r.start_time_minutes + r.duration
                 if current_time_minutes > end_minutes:
-                    status_final = "completed"
+                    final_status = "completed"
 
         group_names = [f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index}" for g in r.subgroups]
 
@@ -416,7 +416,7 @@ def get_all_reservations_admin(db: Session):
             "date": r.calendar_date,
             "start_hour": r.start_time_minutes // 60,
             "duration": r.duration // 60,
-            "status": status_final,
+            "status": final_status,
             "cancellation_reason": r.cancellation_reason if r.status == "cancelled" else None,
             "week_number": r.week_number
         })
@@ -436,14 +436,14 @@ def get_reservations_by_subgroups(db: Session):
     grouped_reservations = {}
 
     for r in reservations:
-        status_final = r.status 
+        final_status = r.status 
         if r.status.lower() == "reserved":
             if r.calendar_date < today_date:
-                status_final = "completed"
+                final_status = "completed"
             elif r.calendar_date == today_date:
                 end_minutes = r.start_time_minutes + r.duration
                 if current_time_minutes > end_minutes:
-                    status_final = "completed"
+                    final_status = "completed"
 
         name_parts = [
                 r.main_professor.position_short_name,
@@ -466,7 +466,7 @@ def get_reservations_by_subgroups(db: Session):
             "date": r.calendar_date.isoformat(),
             "start_hour": r.start_time_minutes // 60,
             "duration": r.duration // 60,
-            "status": status_final,
+            "status": final_status,
             "cancellation_reason": r.cancellation_reason if r.status == "cancelled" else None
         }
 
