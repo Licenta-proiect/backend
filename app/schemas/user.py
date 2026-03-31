@@ -129,9 +129,9 @@ class WeeksRequest(BaseModel):
 class AdminEventRequest(BaseModel):
     subject: str = Field(..., min_length=1)
     room_ids: List[int] = Field(..., alias="room_ids")
-    specialization_years: List[str] = Field(
+    subgroup_ids: List[int] = Field(
         default=[], 
-        alias="specialization_years"
+        alias="subgroup_ids"
     )
     
     professor_ids: List[int] = Field(
@@ -154,7 +154,7 @@ class AdminEventConfirmationRequest(BaseModel):
     subject: str
     room_id: int = Field(..., alias="roomId")
     professor_ids: List[int] = Field(default=[], alias="professorIds")
-    subgroup_ids: List[str] = Field(default=[], alias="subgroupIds")
+    subgroup_ids: List[int] = Field(default=[], alias="subgroupIds")
     reservation_date: date = Field(..., alias="reservationDate")
     start_hour: int = Field(..., alias="startHour")  
     duration: int = Field(...)  

@@ -1,39 +1,12 @@
 # app\services\admin_search.py
 from datetime import datetime, date, timedelta
-from typing import List
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from app.models.models import Schedule, Subgroup, Room, Reservation, AcademicCalendar
+from app.models.models import Schedule, Room, Reservation, AcademicCalendar
 from app.schemas.user import AdminEventRequest
 from ortools.sat.python import cp_model
 from .alternative_slot import format_row, parse_weeks_from_info
 from .free_slot import format_reservation_to_schedule
 from app.utils.time_helper import get_now
-
-def groups_from_specialization(db: Session, specialization_years: List[str]):
-    parsed_items = []
-    spec_names = []
-
-    for item in specialization_years:
-        try:
-            spec, year = item.split(";")
-            spec = spec.strip()
-            parsed_items.append((spec.lower(), int(year)))
-            spec_names.append(spec.lower())
-        except (ValueError, IndexError):
-            continue
-
-    all_subgroup_ids = []
-    if parsed_items:
-        candidate_groups = db.query(Subgroup.id, Subgroup.specialization_short_name, Subgroup.study_year).filter(
-            func.lower(Subgroup.specialization_short_name).in_(spec_names)
-        ).all()
-        
-        for g_id, g_spec, g_year in candidate_groups:
-            if (g_spec.lower(), g_year) in parsed_items:
-                all_subgroup_ids.append(g_id)
-
-    return all_subgroup_ids
 
 def get_academic_context(db: Session, target_date: date):
     """
@@ -64,7 +37,7 @@ def get_admin_constraints_for_day(db: Session, req: AdminEventRequest, target_da
     day_idx = target_date.isoweekday()
 
     # 1. Map Specialization-Year strings to Subgroup IDs (FIXED: use extend)
-    all_subgroup_ids = groups_from_specialization(db, req.specialization_years)
+    all_subgroup_ids = req.subgroup_ids
 
     prof_tags = [f"p{pid}" for pid in req.professor_ids]
     group_tags = [f"g{gid}" for gid in all_subgroup_ids]
@@ -201,7 +174,7 @@ if __name__ == "__main__":
         req = AdminEventRequest(
             subject="Test Admin Event",
             room_ids=[66], 
-            specialization_years=["C;1"], 
+            subgroup_ids=[20, 21, 23, 24, 831], 
             professor_ids=[68], 
             start_date=date(2026, 6, 1), 
             end_date=date(2026, 6, 3),

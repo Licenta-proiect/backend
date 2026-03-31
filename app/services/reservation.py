@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 from app.models.models import Reservation, Room, Subgroup, Professor, Schedule
 from app.schemas.user import AdminEventConfirmationRequest, SlotReservationRequest, ReservationCancellationRequest
-from app.services.admin_search import groups_from_specialization
 from app.services.free_slot import check_subject_existence
 from app.utils.time_helper import get_now
 
@@ -175,7 +174,11 @@ def create_admin_event_reservation(db: Session, req: AdminEventConfirmationReque
     Creates an admin event reservation with full conflict validation.
     """
     try:
-        # 1. TIME CHECK (Prevent past reservations)
+        room = db.query(Room).filter(Room.id == req.room_id).first()
+        if not room:
+            return {"error": f"Sala nu există."}
+
+        # TIME CHECK (Prevent past reservations)
         now = get_now()
         if req.reservation_date < now.date():
             return {"error": "Nu se pot face rezervări pentru zile care au trecut."}
@@ -187,11 +190,10 @@ def create_admin_event_reservation(db: Session, req: AdminEventConfirmationReque
         if req.reservation_date == now.date() and start_minutes < (now.hour * 60 + now.minute):
             return {"error": "Nu se pot face rezervări pentru un interval orar care a început deja."}
 
-        # 2. RESOLVE SUBGROUPS (Convert "C;1" to objects)
-        all_subgroup_ids = groups_from_specialization(db, req.subgroup_ids)
-        subgroups_objects = db.query(Subgroup).filter(Subgroup.id.in_(all_subgroup_ids)).all()
+        # RESOLVE SUBGROUPS 
+        subgroups_objects = db.query(Subgroup).filter(Subgroup.id.in_(req.subgroup_ids)).all()
 
-        # 3. CONFLICT CHECK (Hybrid logic: Room, Multiple Professors, Multiple Subgroups)
+        # CONFLICT CHECK (Hybrid logic: Room, Multiple Professors, Multiple Subgroups)
         # Query for existing overlapping reservations
         conflict = db.query(Reservation).filter(
             Reservation.calendar_date == req.reservation_date,
@@ -206,7 +208,7 @@ def create_admin_event_reservation(db: Session, req: AdminEventConfirmationReque
                 Reservation.professor_id.in_(req.professor_ids),
                 Reservation.additional_professors.any(Professor.id.in_(req.professor_ids)),
                 # Any of the subgroups
-                Reservation.subgroups.any(Subgroup.id.in_(all_subgroup_ids))
+                Reservation.subgroups.any(Subgroup.id.in_(req.subgroup_ids))
             )
         ).first()
 
@@ -217,12 +219,14 @@ def create_admin_event_reservation(db: Session, req: AdminEventConfirmationReque
                 msg = f"Conflict detectat cu rezervarea existentă: {conflict.subject}"
             return {"error": msg}
 
-        # 4. CAPACITY CHECK (Optional but recommended)
+        # CAPACITY CHECK (Optional but recommended)
+        '''
         room_obj = db.query(Room).filter(Room.id == req.room_id).first()
         if room_obj and req.number_of_people > room_obj.capacity:
             return {"error": f"Capacitatea sălii ({room_obj.capacity}) este mai mică decât numărul de persoane ({req.number_of_people})."}
+        '''
 
-        # 5. CREATE RESERVATION
+        # CREATE RESERVATION
         new_reservation = Reservation(
             room_id=req.room_id,
             subject=req.subject,
