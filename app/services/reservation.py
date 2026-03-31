@@ -79,8 +79,7 @@ def create_slot_reservation(db: Session, req: SlotReservationRequest):
 
         # Query for any existing reservation that overlaps with the requested interval
         conflict_query = db.query(Reservation).filter(
-            Reservation.day_of_week == req.day,
-            Reservation.week_number == req.week,
+            Reservation.calendar_date == req.reservation_date, 
             func.lower(Reservation.status) == "reserved",
             Reservation.start_time_minutes < end_minutes,
             (Reservation.start_time_minutes + Reservation.duration) > start_minutes
@@ -89,8 +88,13 @@ def create_slot_reservation(db: Session, req: SlotReservationRequest):
         # Apply entity filters: Room OR Professor OR Any of the Groups
         conflict = conflict_query.filter(
             or_(
+                # The room is occupied
                 Reservation.room_id == req.room_id,
+                # The current teacher is tenured elsewhere
                 Reservation.professor_id == professor.id,
+                # The current teacher is an additional participant elsewhere
+                Reservation.additional_professors.any(Professor.id == professor.id),
+                # Any of the groups is involved in another event
                 Reservation.subgroups.any(Subgroup.id.in_(req.group_ids))
             )
         ).first()
@@ -98,7 +102,7 @@ def create_slot_reservation(db: Session, req: SlotReservationRequest):
         if conflict:
             if conflict.room_id == req.room_id:
                 msg = "Sala este deja ocupată în acest interval."
-            elif conflict.professor_id == professor.id:
+            elif conflict.professor_id == professor.id or any(p.id == professor.id for p in conflict.additional_professors):
                 msg = "Aveți deja o altă rezervare în acest interval."
             else:
                 msg = "Una dintre grupele selectate are deja o rezervare în acest interval."
