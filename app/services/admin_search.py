@@ -1,6 +1,6 @@
 # app\services\admin_search.py
 from datetime import datetime, date, timedelta
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.models.models import Schedule, Room, Reservation, AcademicCalendar
 from app.schemas.user import AdminEventRequest
 from ortools.sat.python import cp_model
@@ -8,31 +8,27 @@ from .alternative_slot import format_row, parse_weeks_from_info
 from .free_slot import format_reservation_to_schedule
 from app.utils.time_helper import get_now
 
-def get_academic_context(db: Session, target_date: date):
+def get_academic_context(target_date: date, all_calendar_entries: list):
     """
     Checks if a specific date falls within a lecture week (1-14).
     """
-    all_cal = db.query(AcademicCalendar).filter(AcademicCalendar.week_number <= 14).all()
-    
-    for entry in all_cal:
+    for entry in all_calendar_entries:
         segments = entry.period.split(';')
         for seg in segments:
             parts = seg.split('-')
             if len(parts) != 2: continue
             start_dt = datetime.strptime(parts[0].strip(), "%Y.%m.%d").date()
             end_dt = datetime.strptime(parts[1].strip(), "%Y.%m.%d").date()
-            
             if start_dt <= target_date <= end_dt:
                 return entry.semester, entry.week_number
-                
     return None, None
 
-def get_admin_constraints_for_day(db: Session, req: AdminEventRequest, target_date: date):
+def get_admin_constraints_for_day(db: Session, req: AdminEventRequest, target_date: date, calendar_data: list):
     """
     Collects constraints from Schedule (if in semester) and Reservations.
     Takes into account both main professors and additional professors in junction tables.
     """
-    semester, week_no = get_academic_context(db, target_date)
+    semester, week_no = get_academic_context(target_date, calendar_data)
     is_during_semester = semester is not None
     day_idx = target_date.isoweekday()
 
@@ -62,7 +58,10 @@ def get_admin_constraints_for_day(db: Session, req: AdminEventRequest, target_da
                 elif r.id_url in room_tags: room_blocks.append(row)
 
     # 3. LOAD FROM RESERVATIONS
-    reservations = db.query(Reservation).filter(
+    reservations = db.query(Reservation).options(
+        joinedload(Reservation.additional_professors),
+        joinedload(Reservation.subgroups)
+    ).filter(
         Reservation.calendar_date == target_date,
         Reservation.status == "reserved"
     ).all()
@@ -100,6 +99,8 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
     now = get_now()
     today = now.date()
 
+    all_calendar_entries = db.query(AcademicCalendar).filter(AcademicCalendar.week_number <= 14).all()
+
     delta = req.end_date - req.start_date
     days_to_check = [req.start_date + timedelta(days=i) for i in range(delta.days + 1) 
                      if (req.start_date + timedelta(days=i)) > today]
@@ -112,7 +113,7 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
     duration_min = req.duration * 60
 
     for target_date in days_to_check:
-        constraints = get_admin_constraints_for_day(db, req, target_date)
+        constraints = get_admin_constraints_for_day(db, req, target_date, all_calendar_entries)
         day_options = []
 
         for rid in req.room_ids:
