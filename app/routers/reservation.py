@@ -161,7 +161,7 @@ def search_admin_event_slots(
             "duration": req.duration,
             "rooms": req.room_ids,
             "professors": req.professor_ids,
-            "specializations": req.specialization_years
+            "subgroups": req.subgroup_ids
         },
         "days": results
     }
