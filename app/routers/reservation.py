@@ -11,6 +11,7 @@ from app.services.future_weeks import get_future_weeks_logic
 from app.services.admin_search import find_admin_free_slots
 from app.schemas.user import AdminEventRequest
 from app.models.models import UserRole
+from app.utils.time_helper import get_now
 
 router = APIRouter(prefix="/reservations", tags=["Reservations"])
 
@@ -140,6 +141,22 @@ def search_admin_event_slots(
             status_code=403,
             detail="Acces interzis. Doar administratorii pot planifica evenimente."
         )
+    
+    # --- TIME CHECK ---
+    now = get_now()
+    today = now.date()
+
+    # Check if the entire range is in the past
+    if req.end_date < today:
+        raise HTTPException(
+            status_code=400, 
+            detail="Nu se pot căuta sloturi libere pentru o perioadă care a trecut deja."
+        )
+    
+    # If the start_date is in the past, but end_date is in the future,
+    # we should internally adjust start_date to today to avoid searching the past.
+    if req.start_date < today:
+        req.start_date = today
 
     # 2. Calling the range search service
     try:
