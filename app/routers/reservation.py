@@ -150,7 +150,7 @@ def search_admin_event_slots(
     # 3. If no slots are found, return an object with an empty list and info
     if not results:
         return {
-            "info": "Nu s-au găsit sloturi libere pentru criteriile selectate în acest interval.",
+            "info": "Nu s-au găsit sloturi disponibile pentru criteriile selectate în acest interval.", 
             "days": []
         }
 
