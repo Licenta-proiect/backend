@@ -8,6 +8,18 @@ from app.services.free_slot import check_subject_existence
 from app.services.scraper import clean_val
 from app.utils.time_helper import get_now
 
+def format_professor_full_name(professor):
+    """Helper to format professor name with titles and position."""
+    if not professor:
+        return "N/A"
+    name_parts = [
+        professor.position_short_name,
+        professor.phd_short_name,
+        professor.last_name,
+        professor.first_name
+    ]
+    return " ".join(part for part in name_parts if part).strip()
+
 def create_slot_reservation(db: Session, req: SlotReservationRequest):
     """
     Creates a reservation in the database after checking for conflicts.
@@ -350,12 +362,15 @@ def get_teacher_reservations(db: Session, email: str):
 
         group_names = [f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index}" for g in r.subgroups]
 
+        assoc_professors = [format_professor_full_name(p) for p in r.additional_professors]
+
         result.append({
             "id": r.id,
             "subject": r.subject,
             "type": r.type,
             "room": r.room.name if r.room else "N/A",
             "groups": group_names,
+            "additional_professors": assoc_professors,
             "week": r.week_number,
             "day": r.day_of_week,
             "date": r.calendar_date,
@@ -371,7 +386,12 @@ def get_all_reservations_admin(db: Session):
     """
     Returns all reservations in the system for the admin panel.
     """
-    reservations = db.query(Reservation).all()
+    reservations = db.query(Reservation).options(
+        joinedload(Reservation.main_professor),
+        joinedload(Reservation.additional_professors),
+        joinedload(Reservation.subgroups),
+        joinedload(Reservation.room)
+    ).all()
     
     now = get_now()
     today_date = now.date()
@@ -391,24 +411,13 @@ def get_all_reservations_admin(db: Session):
 
         group_names = [f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index}" for g in r.subgroups]
 
-        prof_name = "N/A"
-        prof_email = "N/A"
-        
-        if r.main_professor:
-            name_parts = [
-                r.main_professor.position_short_name,
-                r.main_professor.phd_short_name, 
-                r.main_professor.last_name,
-                r.main_professor.first_name
-            ]
+        assoc_professors = [format_professor_full_name(p) for p in r.additional_professors]
 
-            prof_name = " ".join(part for part in name_parts if part)
-            prof_email = r.main_professor.email_address
-            
         result.append({
             "id": r.id,
-            "professor": prof_name,
-            "professor_email": prof_email,
+            "professor": format_professor_full_name(r.main_professor),
+            "professor_email": r.main_professor.email_address if r.main_professor else "N/A",
+            "additional_professors": assoc_professors,
             "subject": r.subject,
             "type": r.type,
             "room": r.room.name if r.room else "N/A",
@@ -427,7 +436,11 @@ def get_reservations_by_subgroups(db: Session):
     """
     Returns all reservations grouped by subgroup ID.
     """
-    reservations = db.query(Reservation).join(Reservation.subgroups).all()
+    reservations = db.query(Reservation).options(
+        joinedload(Reservation.main_professor),
+        joinedload(Reservation.additional_professors),
+        joinedload(Reservation.subgroups)
+    ).join(Reservation.subgroups).all()
     
     now = get_now()
     today_date = now.date()
@@ -445,19 +458,15 @@ def get_reservations_by_subgroups(db: Session):
                 if current_time_minutes > end_minutes:
                     final_status = "completed"
 
-        name_parts = [
-                r.main_professor.position_short_name,
-                r.main_professor.phd_short_name, 
-                r.main_professor.last_name,
-                r.main_professor.first_name
-            ]
-
-        prof_name = " ".join(part for part in name_parts if part)
+        prof_name = format_professor_full_name(r.main_professor)
+        assoc_professors = [format_professor_full_name(p) for p in r.additional_professors]
+        
         group_names_display = [f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index}" for g in r.subgroups]
 
         reservation_data = {
             "id": r.id,
             "professor": prof_name,
+            "additional_professors": assoc_professors,
             "professor_email": r.main_professor.email_address if r.main_professor else "N/A",
             "subject": r.subject,
             "type": r.type,
