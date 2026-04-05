@@ -440,7 +440,9 @@ def get_reservations_by_subgroups(db: Session):
         joinedload(Reservation.main_professor),
         joinedload(Reservation.additional_professors),
         joinedload(Reservation.subgroups)
-    ).join(Reservation.subgroups).all()
+    ).join(Reservation.subgroups).filter(
+        Reservation.type.ilike("event") == False  
+    ).all()
     
     now = get_now()
     today_date = now.date()
@@ -459,14 +461,12 @@ def get_reservations_by_subgroups(db: Session):
                     final_status = "completed"
 
         prof_name = format_professor_full_name(r.main_professor)
-        assoc_professors = [format_professor_full_name(p) for p in r.additional_professors]
         
         group_names_display = [f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index}" for g in r.subgroups]
 
         reservation_data = {
             "id": r.id,
             "professor": prof_name,
-            "additional_professors": assoc_professors,
             "professor_email": r.main_professor.email_address if r.main_professor else "N/A",
             "subject": r.subject,
             "type": r.type,
