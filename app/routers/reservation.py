@@ -1,4 +1,6 @@
 # app\routers\reservation.py
+from datetime import timedelta
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.session import get_db
@@ -146,17 +148,25 @@ def search_admin_event_slots(
     now = get_now()
     today = now.date()
 
-    # Check if the entire range is in the past
+    # Case 1: The entire range ends strictly before today
     if req.end_date < today:
         raise HTTPException(
             status_code=400, 
             detail="Nu se pot căuta sloturi libere pentru o perioadă care a trecut deja."
         )
     
-    # If the start_date is in the past, but end_date is in the future,
-    # we should internally adjust start_date to today to avoid searching the past.
-    if req.start_date < today:
-        req.start_date = today
+    # Case 2: The range ends today (same-day reservations are not allowed)
+    # This covers cases where both start and end are today, or just the end is today.
+    if req.end_date == today:
+        raise HTTPException(
+            status_code=400,
+            detail="Nu se pot face rezervări în aceeași zi."
+        )
+
+    # Case 3: The range starts in the past or today but ends in the future
+    # We adjust the start date to tomorrow (today + 1 day) since today is not allowed
+    if req.start_date <= today:
+        req.start_date = today + timedelta(days=1)
 
     # 2. Calling the range search service
     try:
