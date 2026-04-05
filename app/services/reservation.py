@@ -360,7 +360,8 @@ def get_teacher_reservations(db: Session, email: str):
                 if current_time_minutes > end_time_minutes:
                     final_status = "completed"
 
-        group_names = [f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index}" for g in r.subgroups]
+        sorted_subgroups = sorted(r.subgroups, key=lambda g: (g.specialization_short_name, g.study_year, g.group_name, g.subgroup_index))
+        group_names = [f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index}" for g in sorted_subgroups]
 
         assoc_professors = [format_professor_full_name(p) for p in r.additional_professors]
 
@@ -409,7 +410,8 @@ def get_all_reservations_admin(db: Session):
                 if current_time_minutes > end_minutes:
                     final_status = "completed"
 
-        group_names = [f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index}" for g in r.subgroups]
+        sorted_subgroups = sorted(r.subgroups, key=lambda g: (g.specialization_short_name, g.study_year, g.group_name, g.subgroup_index))
+        group_names = [f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index}" for g in sorted_subgroups]
 
         assoc_professors = [format_professor_full_name(p) for p in r.additional_professors]
 
@@ -462,7 +464,8 @@ def get_reservations_by_subgroups(db: Session):
 
         prof_name = format_professor_full_name(r.main_professor)
         
-        group_names_display = [f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index}" for g in r.subgroups]
+        sorted_subgroups = sorted(r.subgroups, key=lambda g: (g.specialization_short_name, g.study_year, g.group_name, g.subgroup_index))
+        group_names_display = [f"{g.specialization_short_name} an {g.study_year} {g.group_name}{g.subgroup_index}" for g in sorted_subgroups]
 
         reservation_data = {
             "id": r.id,
