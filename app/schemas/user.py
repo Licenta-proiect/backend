@@ -30,11 +30,6 @@ class UserResponse(UserBase):
     class Config:
         from_attributes = True  # Allows mapping SQLAlchemy objects
 
-class LoginResponse(BaseModel):
-    access_token: str
-    token_type: str
-    user: UserResponse
-
 class UserUpdate(BaseModel):
     last_name: Optional[str] = None
     first_name: Optional[str] = None

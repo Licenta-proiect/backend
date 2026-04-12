@@ -5,6 +5,7 @@ from jose import jwt, JWTError
 from fastapi import Request, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from authlib.integrations.starlette_client import OAuth
+import pyotp
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.models import User, UserRole, Professor
@@ -25,6 +26,12 @@ oauth.register(
     server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
     client_kwargs={'scope': 'openid email profile'}
 )
+
+def generate_otp_secret():
+    return pyotp.random_base32()
+
+def get_otp_verifier(secret: str):
+    return pyotp.TOTP(secret, interval=300)
 
 def create_access_token(data: dict):
     """Generates a signed JWT token."""
