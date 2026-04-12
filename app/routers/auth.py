@@ -62,9 +62,15 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
             # Dispatch the email
             send_2fa_email(user.email, otp_code)
 
-            # Creăm token-ul temporar (folosind importurile de mai sus)
+            now_timestamp = int(datetime.now(timezone.utc).timestamp())
+
             temp_token = jwt.encode(
-                {"sub": user.email, "pending_2fa": True, "exp": datetime.now(timezone.utc) + timedelta(minutes=10)},
+                {
+                    "sub": user.email, 
+                    "pending_2fa": True, 
+                    "iat_2fa": now_timestamp, # "Issued At" pentru 2FA
+                    "exp": datetime.now(timezone.utc) + timedelta(minutes=10)
+                },
                 SECRET_KEY, 
                 algorithm=ALGORITHM
             )

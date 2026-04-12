@@ -15,13 +15,13 @@ def send_2fa_email(receiver_email: str, otp_code: str):
 
     # Create the email container
     message = MIMEMultipart()
-    message["From"] = f"SGRD - Autentificare <{sender_email}>"
+    message["From"] = f"SGRD - Autentificare"
     message["To"] = receiver_email
     message["Subject"] = f"{otp_code} este codul tău de verificare"
 
     # HTML body stays in Romanian as it is viewed by the user
     body = f"""
-    <h2>Verificare Securitate SGRD</h2>
+    <h2>Verificare securitate <i>Sistem de gestionare a recuperărilor didactice</i></h2>
     <p>Bună ziua,</p>
     <p>Codul tău de verificare pentru accesarea platformei este:</p>
     <h1 style="color: #2563eb; letter-spacing: 5px;">{otp_code}</h1>
