@@ -116,6 +116,8 @@ class User(Base):
     last_login = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
+    otp_secret = Column(String, nullable=True)
+
     # Relation to Professor model
     professor_info = relationship("Professor", back_populates="user_account")
 
