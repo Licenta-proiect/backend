@@ -67,12 +67,7 @@ def execute_db_backup():
     db_uri = settings.DATABASE_URL
     backup_dir = settings.BACKUP_PATH
     
-    # Path to the pg_dump executable
-    pg_dump_path = r"C:\Program Files\PostgreSQL\18\bin\pg_dump.exe"
-
-    if not os.path.exists(pg_dump_path):
-        print(f"pg_dump not found! Check path: {pg_dump_path}")
-        return None
+    pg_dump_cmd = "pg_dump"
 
     # Create the directory if it doesn't exist
     if not os.path.exists(backup_dir):
@@ -88,7 +83,7 @@ def execute_db_backup():
         # -f (output file)
 
         subprocess.run(
-            [pg_dump_path, db_uri, "-F", "c", "-f", filename],
+            [pg_dump_cmd, db_uri, "-F", "c", "-f", filename],
             check=True,
             capture_output=True,
             text=True
@@ -97,6 +92,9 @@ def execute_db_backup():
         return filename
     except subprocess.CalledProcessError as e:
         print(f"Backup error: {e.stderr}")
+        return None
+    except FileNotFoundError:
+        print("Error: 'pg_dump' command not found. Please add PostgreSQL bin folder to your System PATH.")
         return None
     
 def run_backup_process():
