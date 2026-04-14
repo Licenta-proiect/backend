@@ -2,7 +2,7 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import os
+from app.utils.config import settings
 
 def send_2fa_email(receiver_email: str, otp_code: str):
     """
@@ -11,8 +11,8 @@ def send_2fa_email(receiver_email: str, otp_code: str):
     """
     smtp_server = "smtp.gmail.com"
     smtp_port = 587
-    sender_email = os.getenv("EMAIL_SENDER")
-    sender_password = os.getenv("EMAIL_PASSWORD")
+    sender_email = settings.EMAIL_SENDER
+    sender_password = settings.EMAIL_PASSWORD
 
     # Create the email container
     message = MIMEMultipart()

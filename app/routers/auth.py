@@ -3,7 +3,6 @@ from fastapi import APIRouter, Depends, Request, HTTPException
 from datetime import datetime, timedelta, timezone
 from fastapi.responses import RedirectResponse
 import urllib.parse
-import os
 from jose import jwt
 import pyotp
 from sqlalchemy.orm import Session
@@ -16,6 +15,7 @@ from app.schemas.user import ProfessorAccessRequestCreate
 from app.models.models import ProfessorEmailRequest, User, UserRole
 from app.services.email import send_2fa_email
 from app.services.scraper import clean_val
+from app.utils.config import settings
 
 router = APIRouter(tags=["Authentication"])
 
@@ -76,14 +76,14 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
             )
             
             # Build the frontend redirect URL for verification
-            frontend_base = os.getenv('FRONTEND_URL', 'http://localhost:3000').rstrip('/')
+            frontend_base = settings.FRONTEND_URL.rstrip('/')
             target_url = f"{frontend_base}/verify-2fa?temp_token={temp_token}"
             
             return RedirectResponse(url=target_url)
 
         # Standard flow for Students
         access_token = create_access_token(data={"sub": user.email})
-        frontend_url = f"{os.getenv('FRONTEND_URL')}/callback"
+        frontend_url = f"{settings.FRONTEND_URL}/callback"
         params = {
             "access_token": access_token,
             "role": user.role,
@@ -96,7 +96,7 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
     except Exception as error:
         print(f"Auth Callback Error: {str(error)}")
         error_msg = urllib.parse.quote("Eroare la autentificare. Încercați din nou.")
-        return RedirectResponse(url=f"{os.getenv('FRONTEND_URL')}/auth-error?message={error_msg}")
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/auth-error?message={error_msg}")
     
 @router.get("/me")
 async def get_me(current_user: User = Depends(get_current_user)):

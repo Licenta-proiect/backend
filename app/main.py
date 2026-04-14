@@ -1,6 +1,5 @@
 # app/main.py
 from contextlib import asynccontextmanager
-import os
 from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +7,7 @@ from app.routers import auth, admin, professors, subgroups, data, reservation
 from app.db.session import SessionLocal
 from app.models.models import SystemStatus
 from app.services.scheduler import scheduler, scheduled_backup_job
+from app.utils.config import settings
 
 # Lifespan Manager
 @asynccontextmanager
@@ -39,12 +39,12 @@ app = FastAPI(
 )
 
 # Session Middleware
-app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY"))
+app.add_middleware(SessionMiddleware, secret_key= settings.SECRET_KEY)
 
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[f"{os.getenv('FRONTEND_URL')}"],  # Allows the frontend origin
+    allow_origins=[f"{settings.FRONTEND_URL}"],  # Allows the frontend origin
     allow_credentials=True,
     allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
     allow_headers=["*"],  # Allows all headers

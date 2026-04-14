@@ -1,5 +1,4 @@
 # app\services\calendar_scraper.py
-import os
 import json
 import asyncio
 import httpx
@@ -7,16 +6,14 @@ import bleach
 from bs4 import BeautifulSoup
 from google import genai
 from datetime import datetime
-from dotenv import load_dotenv
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.models.models import AcademicCalendar
-
-load_dotenv()
+from app.utils.config import settings
 
 # Gemini Client Configuration
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+client = genai.Client(api_key= settings.GEMINI_API_KEY)
 
 def validate_and_fix_period(period_str: str) -> bool:
     """

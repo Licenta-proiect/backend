@@ -1,5 +1,4 @@
 # app\services\auth.py
-import os
 from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 from fastapi import Request, HTTPException, Depends, status
@@ -10,9 +9,10 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.models import User, UserRole, Professor
 from app.services.scraper import clean_val
+from app.utils.config import settings
 
 # Load environment variables from .env
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 hours
 
@@ -21,8 +21,8 @@ security = HTTPBearer()
 oauth = OAuth()
 oauth.register(
     name='google',
-    client_id=os.getenv("GOOGLE_CLIENT_ID"),
-    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+    client_id=settings.GOOGLE_CLIENT_ID,
+    client_secret=settings.GOOGLE_CLIENT_SECRET,
     server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
     client_kwargs={'scope': 'openid email profile'}
 )
