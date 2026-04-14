@@ -26,4 +26,4 @@ EXPOSE 8000
 
 # Comanda de start - Asigură-te că main.py este în rădăcina folderului app
 # Dacă main.py este în interior, calea trebuie să fie "app.main:app"
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
