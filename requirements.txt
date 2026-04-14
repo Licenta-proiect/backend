@@ -16,3 +16,4 @@ pydantic[email]
 pyotp
 google-api-python-client
 apscheduler
+google-auth-httplib2

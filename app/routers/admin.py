@@ -435,24 +435,48 @@ async def update_backup_settings(
 
     # 2. We update the Scheduler in real time
     try:
-        job_id = "daily_backup"
+        # Use a consistent ID for the scheduled task
+        job_id = "scheduled_backup_task"
         
-        # If backup has been disabled, we remove the job if it exists
+        # 1. If the admin disabled backups, remove the job from the scheduler
         if not settings.backup_enabled:
             if scheduler.get_job(job_id):
                 scheduler.remove_job(job_id)
+                print("Scheduled backup task removed.")
         else:
+            # 2. Parse the time (format "HH:MM")
             hour, minute = settings.backup_time.split(':')
             
-            # We check if the job already exists
+            # 3. Prepare base arguments for the cron trigger
+            trigger_args = {'hour': hour, 'minute': minute}
+            
+            # 4. Refine the schedule based on the selected interval
+            if settings.backup_interval == "weekly":
+                # Run every Monday at the specified time
+                trigger_args['day_of_week'] = 'mon'
+            elif settings.backup_interval == "monthly":
+                # Run on the 1st day of every month at the specified time
+                trigger_args['day'] = 1
+            # If interval is "daily", no extra args are needed; it runs every day
+
+            # 5. Apply the configuration to the scheduler
             if scheduler.get_job(job_id):
-                # We update the existing job with the new time
-                scheduler.reschedule_job(job_id, trigger='cron', hour=hour, minute=minute)
+                # Update existing job parameters in real-time
+                scheduler.reschedule_job(job_id, trigger='cron', **trigger_args)
+                print(f"Backup rescheduled: {settings.backup_interval} at {settings.backup_time}")
             else:
-                # If the job didn't exist (it was disabled), we add it now
-                scheduler.add_job(scheduled_backup_job, 'cron', hour=hour, minute=minute, id=job_id)
+                # Add the job for the first time
+                scheduler.add_job(
+                    scheduled_backup_job, 
+                    'cron', 
+                    id=job_id, 
+                    **trigger_args
+                )
+                print(f"New backup task created: {settings.backup_interval} at {settings.backup_time}")
+                
     except Exception as e:
-        print(f"Scheduler update error: {e}")
+        # Log the error but don't crash the request
+        print(f"Scheduler synchronization error: {e}")
 
     return {"message": "Updated backup settings and reconfigured scheduler."}
 
