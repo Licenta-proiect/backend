@@ -169,6 +169,11 @@ class SystemStatus(Base):
     auto_sync_enabled = Column(Boolean, default=True)
     sync_interval = Column(String, default="weekly") # daily, weekly or monthly
     sync_time = Column(String, default="00:00")     # "HH:MM" format
+
+    # --- Database backup ---
+    backup_enabled = Column(Boolean, default=True)
+    backup_interval = Column(String, default="daily") # daily, weekly
+    backup_time = Column(String, default="00:00")
     
 class SyncHistory(Base):
     __tablename__ = "sync_history"
@@ -179,6 +184,14 @@ class SyncHistory(Base):
     end_date = Column(DateTime, nullable=True)
     status = Column(String)         # "Success" or "Error"
     error_message = Column(String, nullable=True)
+
+class DatabaseBackup(Base):
+    __tablename__ = "database_backups"
+    id = Column(Integer, primary_key=True)
+    filename = Column(String, nullable=False)
+    drive_file_id = Column(String, nullable=False) 
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    size_bytes = Column(Integer, nullable=True)
 
 class AcademicCalendar(Base):
     __tablename__ = "academic_calendar"

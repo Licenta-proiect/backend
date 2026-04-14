@@ -16,3 +16,8 @@ class SyncSettingsResponse(SyncSettingsBase):
     
     class Config:
         from_attributes = True
+
+class BackupSettingsUpdate(BaseModel):
+    backup_enabled: bool
+    backup_interval: str
+    backup_time: str
