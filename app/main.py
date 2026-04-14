@@ -1,11 +1,42 @@
 # app/main.py
+from contextlib import asynccontextmanager
 import os
 from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import auth, admin, professors, subgroups, data, reservation
+from app.db.session import SessionLocal
+from app.models.models import SystemStatus
+from app.services.scheduler import scheduler, scheduled_backup_job
 
-app = FastAPI(title="USV Recovery Manager")
+# Lifespan Manager
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- STARTUP ---
+    db = SessionLocal()
+    status = db.query(SystemStatus).first()
+    db.close()
+    
+    if status:
+        hour, minute = status.backup_time.split(':')
+        # We add the job with a unique ID to be able to manipulate it later if necessary
+        scheduler.add_job(
+            scheduled_backup_job, 
+            'cron', 
+            hour=hour, 
+            minute=minute, 
+            id="daily_backup")
+    
+    scheduler.start()
+    yield  # application runs
+    
+    # --- SHUTDOWN ---
+    scheduler.shutdown()
+
+app = FastAPI(
+    title="USV Recovery Manager", 
+    lifespan=lifespan 
+)
 
 # Session Middleware
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY"))
