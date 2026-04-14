@@ -5,16 +5,17 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timezone
 from app.db.session import get_db
-from app.schemas.sync import SyncSettingsUpdate
+from app.schemas.sync import BackupSettingsUpdate, SyncSettingsUpdate
 from app.services.auth import get_current_user
-from app.models.models import User, UserRole, Professor, SyncHistory, ProfessorEmailRequest, SystemStatus
+from app.models.models import DatabaseBackup, User, UserRole, Professor, SyncHistory, ProfessorEmailRequest, SystemStatus
 from app.services.reservation import get_all_reservations_admin
 from app.services.scraper import clean_val, populate as populate_base
 from app.services.calendar_scraper import run as populate_calendar
 from app.services.schedule_scraper import populate as populate_orar
 from app.schemas.user import UserCreate, UserResponse, UserUpdate, SyncHistoryResponse
 from app.services.sync_logger import run_sync_with_logging
-from app.services.backup import execute_db_backup
+from app.services.backup import execute_db_backup, run_backup_process
+from app.services.scheduler import scheduler, scheduled_backup_job
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -407,3 +408,66 @@ def get_all_reservations(db: Session = Depends(get_db)):
     Admin route that returns the global history of all reservations.
     """
     return get_all_reservations_admin(db)
+
+# --- DATABASE BACKUP ROUTES ---
+
+@router.post("/backup/settings")
+async def update_backup_settings(
+    settings: BackupSettingsUpdate, 
+    db: Session = Depends(get_db), 
+    user: User = Depends(get_current_user)
+):
+    """
+    Configures the automated backup policy and updates the 
+    scheduler in real-time without restarting the server.
+    """
+    check_admin(user)
+    status = db.query(SystemStatus).first()
+    
+    if not status:
+        raise HTTPException(status_code=404, detail="System status not found.")
+
+    # 1. We update the database
+    status.backup_enabled = settings.backup_enabled
+    status.backup_interval = settings.backup_interval
+    status.backup_time = settings.backup_time
+    db.commit()
+
+    # 2. We update the Scheduler in real time
+    try:
+        job_id = "daily_backup"
+        
+        # If backup has been disabled, we remove the job if it exists
+        if not settings.backup_enabled:
+            if scheduler.get_job(job_id):
+                scheduler.remove_job(job_id)
+        else:
+            hour, minute = settings.backup_time.split(':')
+            
+            # We check if the job already exists
+            if scheduler.get_job(job_id):
+                # We update the existing job with the new time
+                scheduler.reschedule_job(job_id, trigger='cron', hour=hour, minute=minute)
+            else:
+                # If the job didn't exist (it was disabled), we add it now
+                scheduler.add_job(scheduled_backup_job, 'cron', hour=hour, minute=minute, id=job_id)
+    except Exception as e:
+        print(f"Scheduler update error: {e}")
+
+    return {"message": "Updated backup settings and reconfigured scheduler."}
+
+@router.post("/backup/now")
+async def trigger_manual_backup(
+    bg_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user)
+):
+    """Triggers a backup process immediately in the background."""
+    check_admin(user)
+    bg_tasks.add_task(run_backup_process)
+    return {"message": "Backup process started in background."}
+
+@router.get("/backups")
+async def list_backups(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Retrieves a chronological history of all successful backups."""
+    check_admin(user)
+    return db.query(DatabaseBackup).order_by(DatabaseBackup.created_at.desc()).all()
