@@ -1,4 +1,6 @@
 # app\routers\admin.py
+import asyncio
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -16,6 +18,13 @@ from app.schemas.user import UserCreate, UserResponse, UserUpdate, SyncHistoryRe
 from app.services.sync_logger import run_sync_with_logging
 from app.services.backup import execute_db_backup, run_backup_process
 from app.services.scheduler import scheduler, scheduled_backup_job
+from app.utils.maintenance import verify_system_available
+
+async def simulate_long_sync():
+    """Simulează un proces de sincronizare care durează 5 minute."""
+    print("Test: Sincronizare simulată pornită (5 minute)...")
+    await asyncio.sleep(30) 
+    print("Test: Sincronizare simulată finalizată.")
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -40,7 +49,7 @@ async def get_all_users(
     users = db.query(User).all() 
     return users
 
-@router.post("/users/create")
+@router.post("/users/create", dependencies=[Depends(verify_system_available)])
 async def create_user(
     user_in: UserCreate, 
     db: Session = Depends(get_db), 
@@ -86,7 +95,7 @@ async def create_user(
 
     return {"message": f"Utilizatorul {user_in.first_name} {user_in.last_name} a fost creat cu succes sub rolul de {user_in.role}."}
 
-@router.delete("/users/delete/{email}")
+@router.delete("/users/delete/{email}", dependencies=[Depends(verify_system_available)])
 async def delete_user(
     email: str, 
     db: Session = Depends(get_db), 
@@ -117,7 +126,7 @@ async def delete_user(
     db.commit() 
     return {"message": f"Utilizatorul {email} a fost șters cu succes."}
 
-@router.put("/users/update/{email}", response_model=UserResponse)
+@router.put("/users/update/{email}", response_model=UserResponse, dependencies=[Depends(verify_system_available)])
 async def update_user(
     email: str, 
     update_data: UserUpdate,
@@ -205,7 +214,7 @@ async def get_professor_requests(
     requests = query.order_by(ProfessorEmailRequest.request_date.desc()).all()
     return requests
 
-@router.post("/requests/approve/{request_id}")
+@router.post("/requests/approve/{request_id}", dependencies=[Depends(verify_system_available)])
 async def approve_professor_request(
     request_id: int,
     db: Session = Depends(get_db),
@@ -274,7 +283,7 @@ async def approve_professor_request(
             pass
         raise HTTPException(status_code=500, detail=f"Eroare la procesare: {str(e)}")
 
-@router.post("/requests/reject/{request_id}")
+@router.post("/requests/reject/{request_id}", dependencies=[Depends(verify_system_available)])
 async def reject_professor_request(
     request_id: int,
     db: Session = Depends(get_db),
@@ -312,13 +321,22 @@ async def reject_professor_request(
 
 # --- SCHEDULE SYNC ROUTES ---
 
-@router.post("/sync/base")
+@router.get("/sync/status")
+async def get_maintenance_status(db: Session = Depends(get_db)):
+    """
+    Public route for checking maintenance status.
+    Returns true if the system is being updated.
+    """
+    status_obj = db.query(SystemStatus).first()
+    return {"is_updating": status_obj.is_updating if status_obj else False}
+
+@router.post("/sync/base", dependencies=[Depends(verify_system_available)])
 async def sync_base_data(bg: BackgroundTasks, user: User = Depends(get_current_user)):
     check_admin(user)
     bg.add_task(run_sync_with_logging, populate_base, "Base")
     return {"message": "Sincronizare date de bază pornită."}
 
-@router.post("/sync/calendar")
+@router.post("/sync/calendar", dependencies=[Depends(verify_system_available)])
 async def sync_calendar(bg: BackgroundTasks, user: User = Depends(get_current_user)):
     check_admin(user)
 
@@ -330,7 +348,7 @@ async def sync_calendar(bg: BackgroundTasks, user: User = Depends(get_current_us
     bg.add_task(run_sync_with_logging, populate_calendar, "Calendar")
     return {"message": "Sincronizare calendar pornită."}
 
-@router.post("/sync/schedule")
+@router.post("/sync/schedule", dependencies=[Depends(verify_system_available)])
 async def sync_schedule(bg: BackgroundTasks, user: User = Depends(get_current_user)):
     check_admin(user)
 
@@ -342,7 +360,7 @@ async def sync_schedule(bg: BackgroundTasks, user: User = Depends(get_current_us
     bg.add_task(run_sync_with_logging, populate_orar, "Schedule")
     return {"message": "Sincronizare orar pornită."}
 
-@router.post("/sync/base-schedule")
+@router.post("/sync/base-schedule", dependencies=[Depends(verify_system_available)])
 async def sync_full_db_schedule(bg: BackgroundTasks, user: User = Depends(get_current_user)):
     """
     Combined route that syncs base data followed immediately by the Schedule.
@@ -379,7 +397,7 @@ async def get_sync_settings(db: Session = Depends(get_db), user: User = Depends(
     status_obj = db.query(SystemStatus).first()
     return status_obj
 
-@router.post("/sync/settings")
+@router.post("/sync/settings", dependencies=[Depends(verify_system_available)])
 async def update_sync_settings(
     settings: SyncSettingsUpdate, 
     db: Session = Depends(get_db), 
@@ -402,7 +420,7 @@ async def update_sync_settings(
 
 # --- RESERVATION ROUTES ---
 
-@router.get("/reservations")
+@router.get("/reservations", dependencies=[Depends(verify_system_available)])
 def get_all_reservations(db: Session = Depends(get_db)):
     """
     Admin route that returns the global history of all reservations.
@@ -411,7 +429,7 @@ def get_all_reservations(db: Session = Depends(get_db)):
 
 # --- DATABASE BACKUP ROUTES ---
 
-@router.post("/backup/settings")
+@router.post("/backup/settings", dependencies=[Depends(verify_system_available)])
 async def update_backup_settings(
     settings: BackupSettingsUpdate, 
     db: Session = Depends(get_db), 
