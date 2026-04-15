@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers import auth, admin, professors, subgroups, data, reservation
 from app.db.session import SessionLocal
 from app.models.models import SystemStatus
-from app.services.scheduler import scheduler, scheduled_backup_job
+from app.services.scheduler import scheduled_sync_job, scheduler, scheduled_backup_job
 from app.utils.config import settings
 
 # Lifespan Manager
@@ -18,14 +18,27 @@ async def lifespan(app: FastAPI):
     db.close()
     
     if status:
-        hour, minute = status.backup_time.split(':')
-        # We add the job with a unique ID to be able to manipulate it later if necessary
-        scheduler.add_job(
-            scheduled_backup_job, 
-            'cron', 
-            hour=hour, 
-            minute=minute, 
-            id="daily_backup")
+        # Backup
+        if status.backup_enabled:
+            hour_b, min_b = status.backup_time.split(':')
+            # We add the job with a unique ID to be able to manipulate it later if necessary
+            scheduler.add_job(
+                scheduled_backup_job, 
+                'cron', 
+                hour=hour_b, 
+                minute=min_b, 
+                id="daily_backup")
+        
+        # Sync 
+        if status.auto_sync_enabled:
+            hour_s, min_s = status.sync_time.split(':')
+            
+            scheduler.add_job(
+                scheduled_sync_job, 
+                'cron', 
+                hour=hour_s, 
+                minute=min_s, 
+                id="scheduled_sync_task")
     
     scheduler.start()
     yield  # application runs

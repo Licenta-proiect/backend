@@ -1,6 +1,4 @@
 # app\routers\admin.py
-import asyncio
-
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -17,14 +15,8 @@ from app.services.schedule_scraper import populate as populate_orar
 from app.schemas.user import UserCreate, UserResponse, UserUpdate, SyncHistoryResponse
 from app.services.sync_logger import run_sync_with_logging
 from app.services.backup import execute_db_backup, run_backup_process
-from app.services.scheduler import scheduler, scheduled_backup_job
+from app.services.scheduler import scheduler, scheduled_backup_job, sync_base_and_schedule_logic, scheduled_sync_job
 from app.utils.maintenance import verify_system_available
-
-async def simulate_long_sync():
-    """Simulează un proces de sincronizare care durează 5 minute."""
-    print("Test: Sincronizare simulată pornită (5 minute)...")
-    await asyncio.sleep(30) 
-    print("Test: Sincronizare simulată finalizată.")
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -32,11 +24,6 @@ def check_admin(user: User):
     """Verifies if the user has an administrator role."""
     if user.role != UserRole.ADMIN.value:
         raise HTTPException(status_code=403, detail="Access denied. Admin role required.")
-
-async def sync_base_and_schedule_logic():
-    """Executes base data population followed by schedule population sequentially."""
-    await populate_base()
-    await populate_orar()
 
 # --- USER MANAGEMENT ROUTES ---
 @router.get("/users", response_model=List[UserResponse])
@@ -403,7 +390,10 @@ async def update_sync_settings(
     db: Session = Depends(get_db), 
     user: User = Depends(get_current_user)
 ):
-    """Updates how the system executes automatic synchronizations."""
+    """
+    Updates automated synchronization settings and reconfigures 
+    the scheduler jobs in real-time.
+    """
     check_admin(user)
     status_obj = db.query(SystemStatus).first()
     
@@ -411,11 +401,42 @@ async def update_sync_settings(
         status_obj = SystemStatus()
         db.add(status_obj)
     
+    # Update Database values
     status_obj.auto_sync_enabled = settings.auto_sync_enabled
     status_obj.sync_interval = settings.sync_interval
     status_obj.sync_time = settings.sync_time
-    
     db.commit()
+
+    # Dynamic Scheduler Reconfiguration
+    try:
+        job_id = "scheduled_sync_task"
+        
+        if not settings.auto_sync_enabled:
+            # Remove job if the feature is turned off
+            if scheduler.get_job(job_id):
+                scheduler.remove_job(job_id)
+                print(f"Job {job_id} removed successfully.")
+        else:
+            # Parse time and prepare cron arguments
+            hour, minute = settings.sync_time.split(':')
+            trigger_args = {'hour': hour, 'minute': minute}
+
+            # Refine schedule based on interval
+            if settings.sync_interval == "weekly":
+                trigger_args['day_of_week'] = 'sun' # Defaults to Sunday
+            elif settings.sync_interval == "monthly":
+                trigger_args['day'] = 1 # Defaults to the 1st of the month
+
+            # Update existing job or create a new one
+            if scheduler.get_job(job_id):
+                scheduler.reschedule_job(job_id, trigger='cron', **trigger_args)
+            else:
+                scheduler.add_job(scheduled_sync_job, 'cron', id=job_id, **trigger_args)
+            print(f"Sync rescheduled: {settings.sync_interval} at {settings.sync_time}")
+            
+    except Exception as e:
+        print(f"Scheduler sync error: {e}")
+
     return {"message": "Setări de sincronizare actualizate cu succes."}
 
 # --- RESERVATION ROUTES ---
