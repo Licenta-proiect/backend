@@ -1,29 +1,29 @@
 FROM python:3.13.2-slim
 
-# Setăm variabile de mediu pentru a preveni scrierea fișierelor .pyc 
-# și pentru a vedea log-urile în timp real (fără buffering)
+# Set environment variables to prevent Python from writing .pyc files 
+# and to ensure logs are displayed in real-time (without buffering)
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Instalăm dependențele de sistem necesare pentru:
-# 1. psycopg2 (libpq-dev, gcc)
-# 2. pg_dump (postgresql-client)
+# Install necessary system dependencies for:
+# 1. psycopg2 (libpq-dev, gcc - usually bundled or required via libpq)
+# 2. pg_dump/database tools (postgresql-client)
 RUN apt-get update && apt-get install -y postgresql-client && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copiem fișierul de cerințe
+# Copy the requirements file
 COPY requirements.txt .
 
-# Instalăm librăriile Python
+# Install Python libraries
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiem tot codul din folderul 'app' în container
+# Copy all the code into the container
 COPY . .
 
-# Expunem portul FastAPI
+# Expose the FastAPI port
 EXPOSE 8000
 
-# Comanda de start - Asigură-te că main.py este în rădăcina folderului app
-# Dacă main.py este în interior, calea trebuie să fie "app.main:app"
+# Start command - Ensure main.py is correctly referenced
+# If main.py is inside an 'app' folder, use "app.main:app"
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
