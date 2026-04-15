@@ -4,44 +4,60 @@ from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import auth, admin, professors, subgroups, data, reservation
-from app.db.session import SessionLocal
+from app.db.session import Base, SessionLocal, engine
 from app.models.models import SystemStatus
 from app.services.scheduler import scheduled_sync_job, scheduler, scheduled_backup_job
 from app.utils.config import settings
+
+Base.metadata.create_all(bind=engine)
 
 # Lifespan Manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- STARTUP ---
     db = SessionLocal()
-    status = db.query(SystemStatus).first()
-    db.close()
-    
-    if status:
-        # Backup
-        if status.backup_enabled:
-            hour_b, min_b = status.backup_time.split(':')
-            # We add the job with a unique ID to be able to manipulate it later if necessary
-            scheduler.add_job(
-                scheduled_backup_job, 
-                'cron', 
-                hour=hour_b, 
-                minute=min_b, 
-                id="daily_backup")
+    try:
+        status = db.query(SystemStatus).first()
         
-        # Sync 
-        if status.auto_sync_enabled:
-            hour_s, min_s = status.sync_time.split(':')
-            
-            scheduler.add_job(
-                scheduled_sync_job, 
-                'cron', 
-                hour=hour_s, 
-                minute=min_s, 
-                id="scheduled_sync_task")
+        if status:
+            # Backup Job Registration
+            if status.backup_enabled:
+                try:
+                    hour_b, min_b = status.backup_time.split(':')
+                    scheduler.add_job(
+                        scheduled_backup_job, 
+                        'cron', 
+                        hour=hour_b, 
+                        minute=min_b, 
+                        id="daily_backup"
+                    )
+                    print(f"INFO: Backup job scheduled at {status.backup_time}")
+                except ValueError:
+                    print("ERROR: Invalid backup_time format in database.")
+
+            # Sync Job Registration
+            if status.auto_sync_enabled:
+                try:
+                    hour_s, min_s = status.sync_time.split(':')
+                    scheduler.add_job(
+                        scheduled_sync_job, 
+                        'cron', 
+                        hour=hour_s, 
+                        minute=min_s, 
+                        id="scheduled_sync_task"
+                    )
+                    print(f"INFO: Sync job scheduled at {status.sync_time}")
+                except ValueError:
+                    print("ERROR: Invalid sync_time format in database.")
+    except Exception as e:
+        print(f"CRITICAL: Could not initialize scheduler from DB: {e}")
+    finally:
+        db.close()
     
-    scheduler.start()
-    yield  # application runs
+    if not scheduler.running:
+        scheduler.start()
+        
+    yield 
     
     # --- SHUTDOWN ---
     scheduler.shutdown()
