@@ -8,12 +8,6 @@ from app.services.scraper import populate as populate_base
 from app.services.schedule_scraper import populate as populate_orar
 import asyncio
 
-async def simulate_long_sync():
-    """Simulează un proces de sincronizare care durează 5 minute."""
-    print("Test: Sincronizare simulată pornită (5 minute)...")
-    await asyncio.sleep(60) 
-    print("Test: Sincronizare simulată finalizată.")
-
 # Global scheduler instance initialized to run in the background
 # This allows the FastAPI server to handle requests while tasks run independently
 scheduler = BackgroundScheduler()
