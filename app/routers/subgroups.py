@@ -1,6 +1,4 @@
 # app\routers\subgroups.py
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.session import get_db
@@ -10,9 +8,14 @@ from app.services.reservation import get_reservations_by_subgroups
 from app.services.alternative_slot import get_data_for_optimization, find_alternative_slots
 from app.services.future_weeks import get_future_weeks_logic
 from app.utils.time_helper import get_now
+from app.utils.maintenance import verify_system_available
 
 # Initialize router
-router = APIRouter(prefix="/subgroups", tags=["Subgroups"])
+router = APIRouter(
+    prefix="/subgroups", 
+    tags=["Subgroups"],
+    dependencies=[Depends(verify_system_available)]
+)
 
 # Mapping for the index returned by date.weekday() (0=Monday ... 6=Sunday)
 DAYS_RO = {

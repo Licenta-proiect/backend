@@ -1,7 +1,7 @@
 # app\services\sync_logger.py
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
-from app.models.models import SyncHistory
+from app.models.models import SyncHistory, SystemStatus
 from app.db.session import SessionLocal
 from app.services.scraper import clean_val
 
@@ -24,8 +24,14 @@ async def run_sync_with_logging(func, sync_type: str, trigger_type: str = "Manua
     Executes the synchronization and logs the process.
     """
     db: Session = SessionLocal()
+
+    # Enable Maintenance Mode
+    status_obj = db.query(SystemStatus).first()
+    if status_obj:
+        status_obj.is_updating = True
+        db.commit()
     
-    # 1. Create the start entry
+    # Create the start entry
     history = SyncHistory(
         sync_type=clean_val(sync_type),
         trigger_type=clean_val(trigger_type),
@@ -37,17 +43,22 @@ async def run_sync_with_logging(func, sync_type: str, trigger_type: str = "Manua
     db.refresh(history)
 
     try:
-        # 2. Execute the scraping function
+        # Execute the scraping function
         await func() 
         
-        # 3. Mark as success
+        # Mark as success
         history.status = "Success"
     except Exception as e:
-        # 4. Mark as error and save the message
+        # Mark as error and save the message
         history.status = "Error"
         history.error_message = str(e)
     finally:
-        # 5. Finalize the current log
+        # Disable Maintenance Mode
+        if status_obj:
+            status_obj.is_updating = False
+            status_obj.last_sync = datetime.now(timezone.utc)
+
+        # Finalize the current log
         history.end_date = datetime.now(timezone.utc)
         db.commit()
                 

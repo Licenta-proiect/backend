@@ -7,8 +7,13 @@ from app.models.models import Subgroup, Professor, Room, Schedule
 from app.schemas.user import WeeksRequest
 from app.services.future_weeks import get_future_weeks_logic
 from app.services.free_slot import get_max_week_for_groups
+from app.utils.maintenance import verify_system_available
 
-router = APIRouter(prefix="/data", tags=["Data"])
+router = APIRouter(
+    prefix="/data", 
+    tags=["Data"],
+    dependencies=[Depends(verify_system_available)]
+)
 
 @router.get("/professors")
 async def get_active_professors(db: Session = Depends(get_db)):

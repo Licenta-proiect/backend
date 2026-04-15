@@ -16,10 +16,11 @@ from app.models.models import ProfessorEmailRequest, User, UserRole
 from app.services.email import send_2fa_email
 from app.services.scraper import clean_val
 from app.utils.config import settings
+from app.utils.maintenance import verify_system_available
 
 router = APIRouter(tags=["Authentication"])
 
-@router.get("/login")
+@router.get("/login", dependencies=[Depends(verify_system_available)])
 async def login(request: Request):
     redirect_uri = request.url_for('auth_callback')
     
@@ -38,7 +39,7 @@ async def logout(request: Request):
     request.session.clear() 
     return {"message": "Logged out successfully"}
 
-@router.get("/auth/callback") 
+@router.get("/auth/callback", dependencies=[Depends(verify_system_available)])
 async def auth_callback(request: Request, db: Session = Depends(get_db)):
     """
     Handles the redirect from Google OAuth and initiates 2FA if necessary.
@@ -105,7 +106,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
     """
     return {"id": current_user.id, "email": current_user.email}
 
-@router.post("/request-access")
+@router.post("/request-access", dependencies=[Depends(verify_system_available)])
 async def request_professor_access(data: ProfessorAccessRequestCreate, db: Session = Depends(get_db)):
     """
     Allows a professor to request access if their email is missing.
@@ -131,7 +132,7 @@ async def request_professor_access(data: ProfessorAccessRequestCreate, db: Sessi
     
     return {"message": "Cererea a fost trimisă cu succes!"}
 
-@router.post("/auth/verify-2fa")
+@router.post("/auth/verify-2fa", dependencies=[Depends(verify_system_available)])
 async def verify_2fa(data: dict, db: Session = Depends(get_db)):
     """
     Validates the OTP code and issues the final access token.

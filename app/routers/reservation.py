@@ -14,8 +14,13 @@ from app.services.admin_search import find_admin_free_slots
 from app.schemas.user import AdminEventRequest
 from app.models.models import UserRole
 from app.utils.time_helper import get_now
+from app.utils.maintenance import verify_system_available
 
-router = APIRouter(prefix="/reservations", tags=["Reservations"])
+router = APIRouter(
+    prefix="/reservations", 
+    tags=["Reservations"],
+    dependencies=[Depends(verify_system_available)]    
+)
 
 @router.post("/search-free")
 def search_free_slots(req: FreeSlotRequest, db: Session = Depends(get_db)):

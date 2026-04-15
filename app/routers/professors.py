@@ -6,9 +6,14 @@ from app.db.session import get_db
 from app.models.models import Professor, Schedule, Subgroup, Room, User
 from app.services.auth import get_current_user
 from app.services.reservation import get_teacher_reservations
+from app.utils.maintenance import verify_system_available
 
 # Initialize the router
-router = APIRouter(prefix="/professor", tags=["Professors"])
+router = APIRouter(
+    prefix="/professor", 
+    tags=["Professors"],
+    dependencies=[Depends(verify_system_available)]
+)
 
 @router.get("/subjects")
 async def get_professor_subjects(email: str, db: Session = Depends(get_db)):
