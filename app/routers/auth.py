@@ -104,7 +104,11 @@ async def get_me(current_user: User = Depends(get_current_user)):
     """
     Returns current authenticated user details.
     """
-    return {"id": current_user.id, "email": current_user.email}
+    return {
+        "id": current_user.id, 
+        "email": current_user.email,
+        "role": current_user.role  
+    }
 
 @router.post("/request-access", dependencies=[Depends(verify_system_available)])
 async def request_professor_access(data: ProfessorAccessRequestCreate, db: Session = Depends(get_db)):
