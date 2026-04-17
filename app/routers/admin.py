@@ -14,7 +14,7 @@ from app.services.calendar_scraper import run as populate_calendar
 from app.services.schedule_scraper import populate as populate_orar
 from app.schemas.user import UserCreate, UserResponse, UserUpdate, SyncHistoryResponse
 from app.services.sync_logger import run_sync_with_logging
-from app.services.backup import execute_db_backup, run_backup_process
+from app.services.backup import run_backup_process
 from app.services.scheduler import scheduler, scheduled_backup_job, sync_base_and_schedule_logic, scheduled_sync_job
 from app.utils.maintenance import verify_system_available
 
@@ -328,9 +328,11 @@ async def sync_calendar(bg: BackgroundTasks, user: User = Depends(get_current_us
     check_admin(user)
 
     print("Initiating preventive backup...")
-    backup_file = execute_db_backup()
-    if not backup_file:
-         raise HTTPException(status_code=500, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
+    try:
+        run_backup_process() 
+    except Exception as e:
+        print(f"Backup failed: {e}")
+        raise HTTPException(status_code=500, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
 
     bg.add_task(run_sync_with_logging, populate_calendar, "Calendar")
     return {"message": "Sincronizare calendar pornită."}
@@ -340,9 +342,11 @@ async def sync_schedule(bg: BackgroundTasks, user: User = Depends(get_current_us
     check_admin(user)
 
     print("Initiating preventive backup...")
-    backup_file = execute_db_backup()
-    if not backup_file:
-         raise HTTPException(status_code=500, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
+    try:
+        run_backup_process() 
+    except Exception as e:
+        print(f"Backup failed: {e}")
+        raise HTTPException(status_code=500, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
 
     bg.add_task(run_sync_with_logging, populate_orar, "Schedule")
     return {"message": "Sincronizare orar pornită."}
@@ -355,9 +359,11 @@ async def sync_full_db_schedule(bg: BackgroundTasks, user: User = Depends(get_cu
     check_admin(user)
 
     print("Initiating preventive backup...")
-    backup_file = execute_db_backup()
-    if not backup_file:
-         raise HTTPException(status_code=500, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
+    try:
+        run_backup_process() 
+    except Exception as e:
+        print(f"Backup failed: {e}")
+        raise HTTPException(status_code=500, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
 
     bg.add_task(run_sync_with_logging, sync_base_and_schedule_logic, "Base + Schedule")
     return {"message": "Sincronizarea combinată (Bază + Orar) a pornit în fundal."}
