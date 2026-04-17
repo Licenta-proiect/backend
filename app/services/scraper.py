@@ -135,15 +135,6 @@ async def populate():
         # --- 4. SUBGROUPS with Foreign Key protection ---
         print("Downloading subgroups...")
 
-        # Delete all existing records before population
-        try:
-            db.execute(text("DELETE FROM subgroups"))
-            db.commit()
-            print("Old data from 'subgroups' has been deleted.")
-        except Exception as e:
-            db.rollback()
-            print(f"Attention: Could not wipe subgroups: {e}")
-
         subgroups_json = await fetch_data(URLS["subgroups"])
         
         # We take all valid faculty IDs that already exist in DB or were just imported above.
@@ -154,7 +145,7 @@ async def populate():
             if sg["id"] == "0" or sg["facultyId"] == "0" or sg["facultyId"] == 0: 
                 continue
                 
-            db.add(Subgroup(
+            db.merge(Subgroup(
                 id=int(sg["id"]),
                 type=clean_val(sg["type"]),
                 faculty_id=int(sg["facultyId"]),
