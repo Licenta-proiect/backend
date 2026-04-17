@@ -290,7 +290,7 @@ def create_admin_event_reservation(db: Session, req: AdminEventConfirmationReque
     
 def cancel_admin_event(db: Session, reservation_id: int, reason: str):
     """
-    Service to cancel any event by an administrator.
+    Service to cancel only events by an administrator.
     """
     reservation = db.query(Reservation).filter(Reservation.id == reservation_id).first()
     
@@ -300,16 +300,19 @@ def cancel_admin_event(db: Session, reservation_id: int, reason: str):
     if reservation.status.lower() == "cancelled":
         return {"error": "Acest eveniment este deja anulat."}
 
+    if reservation.type.lower() != "event" or reservation.professor_id is not None:
+        return {"error": "Administratorul poate anula direct doar evenimente. Rezervările profesorilor trebuie gestionate diferit."}
+
     now = get_now()
     today_date = now.date()
 
     # Check if reservation is in the past
     if reservation.calendar_date < today_date:
-        return {"error": "Nu se pot anula rezervări din zilele trecute."}
+        return {"error": "Nu se pot anula evenimente din zilele trecute."}
     
     # Check if reservation is today
     if reservation.calendar_date == today_date:
-        return {"error": "Anularea unei rezervări nu se poate face în aceeași zi cu evenimentul."}
+        return {"error": "Anularea unei eveniment nu se poate face în aceeași zi cu evenimentul."}
 
     try:
         reservation.status = "cancelled"
