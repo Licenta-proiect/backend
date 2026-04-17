@@ -47,6 +47,7 @@ def get_compatible_subgroups(db: Session, selected_subgroup_id: int, subject: st
                 Schedule.start_hour == slot.start_hour,
                 Schedule.room_id == slot.room_id,
                 Schedule.teacher_id == slot.teacher_id,
+                Schedule.parity == slot.parity,
                 func.lower(Schedule.type_long_name).like('%curs%')
             ).distinct().all()
             
