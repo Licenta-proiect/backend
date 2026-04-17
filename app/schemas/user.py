@@ -137,7 +137,7 @@ class AdminEventRequest(BaseModel):
     start_date: date = Field(..., alias="start_date")
     end_date: date = Field(..., alias="end_date")
     
-    duration: int = Field(..., ge=1, le=12)
+    duration: int = Field(..., ge=1, le=13)
     number_of_people: int = Field(0, alias="number_of_people", ge=0)
     activity_type: str = Field("event", alias="activity_type")
 
