@@ -194,12 +194,12 @@ def get_schedule_and_reservation_data(db: Session, req: FreeSlotRequest, current
         if res.room_id in req.room_ids:
             room_blocks.append(format_reservation_to_schedule(res, f"s{res.room_id}"))
         
-        # B. Check Professor overlaps (Titular SAU Participant Adițional)
+        # B. Check Professor overlaps 
         additional_prof_ids = [p.id for p in res.additional_professors]
         if res.professor_id == prof_id or prof_id in additional_prof_ids:
             prof_blocks.append(format_reservation_to_schedule(res, f"p{prof_id}"))
         
-        # C. Check Subgroup overlaps (Participare grupă în rezervare)
+        # C. Check Subgroup overlaps
         res_group_ids = [g.id for g in res.subgroups]
         for gid in req.group_ids:
             if gid in res_group_ids:
