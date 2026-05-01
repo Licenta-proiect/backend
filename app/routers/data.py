@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.models.models import Subgroup, Professor, Room, Schedule
+from app.models.models import AcademicCalendar, Subgroup, Professor, Room, Schedule
 from app.schemas.user import WeeksRequest
 from app.services.future_weeks import get_future_weeks_logic
 from app.services.free_slot import get_max_week_for_groups
@@ -220,3 +220,40 @@ async def get_group_activity_types(
     activity_types = sorted([t[0] for t in query if t[0]])
 
     return activity_types
+
+@router.get("/academic-structure")
+async def get_academic_structure(db: Session = Depends(get_db)):
+    """
+    Retrieves the full academic year calendar (both semesters), 
+    ordered by semester and week number.
+    """
+    # Retrieve current state from the system logic
+    current_semester, active_weeks, current_status, _ = get_future_weeks_logic(db)
+    
+    # The first element in active_weeks is the current academic week
+    current_week_number = active_weeks[0] if active_weeks else None
+
+    # Query all entries from the AcademicCalendar table
+    calendar_entries = db.query(AcademicCalendar).order_by(
+        AcademicCalendar.semester.asc(), 
+        AcademicCalendar.week_number.asc()
+    ).all()
+
+    # Format the data for the frontend display
+    structure = []
+    for entry in calendar_entries:
+        structure.append({
+            "academicYear": entry.academic_year,
+            "semester": entry.semester,
+            "weekNumber": entry.week_number,
+            "period": entry.period,
+            "notes": entry.notes,
+            "isCurrent": (entry.week_number == current_week_number and entry.semester == current_semester)
+        })
+
+    return {
+        "currentSemester": current_semester,
+        "currentWeek": current_week_number,
+        "status": current_status,
+        "fullCalendar": structure
+    }
