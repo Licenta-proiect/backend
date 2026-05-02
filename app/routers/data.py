@@ -234,7 +234,8 @@ async def get_academic_structure(db: Session = Depends(get_db)):
     current_week_number = active_weeks[0] if active_weeks else None
 
     # Query all entries from the AcademicCalendar table
-    calendar_entries = db.query(AcademicCalendar).order_by(
+    calendar_entries = db.query(AcademicCalendar
+    ).filter(AcademicCalendar.week_number<=14).order_by(
         AcademicCalendar.semester.asc(), 
         AcademicCalendar.week_number.asc()
     ).all()
@@ -247,7 +248,6 @@ async def get_academic_structure(db: Session = Depends(get_db)):
             "semester": entry.semester,
             "weekNumber": entry.week_number,
             "period": entry.period,
-            "notes": entry.notes,
             "isCurrent": (entry.week_number == current_week_number and entry.semester == current_semester)
         })
 
