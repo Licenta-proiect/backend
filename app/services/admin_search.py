@@ -23,12 +23,11 @@ def get_academic_context(target_date: date, all_calendar_entries: list):
                 return entry.semester, entry.week_number
     return None, None
 
-def get_admin_constraints_for_day(db: Session, req: AdminEventRequest, target_date: date, calendar_data: list):
+def get_admin_constraints_for_day(db: Session, req: AdminEventRequest, target_date: date, semester: int, week_no: int):
     """
     Collects constraints from Schedule (if in semester) and Reservations.
     Takes into account both main professors and additional professors in junction tables.
     """
-    semester, week_no = get_academic_context(target_date, calendar_data)
     is_during_semester = semester is not None
     day_idx = target_date.isoweekday()
 
@@ -117,7 +116,7 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
         semester, week_no = get_academic_context(target_date, all_calendar_entries)
         
         # Collect constraints for the day
-        constraints = get_admin_constraints_for_day(db, req, target_date, all_calendar_entries)
+        constraints = get_admin_constraints_for_day(db, req, target_date, semester, week_no)
         day_options = []
 
         for rid in req.room_ids:
@@ -166,16 +165,11 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
         if day_options:
             day_options.sort(key=lambda x: (x['start_time']))
             
-            report_entry = {
+            final_report.append({
                 "date": target_date.strftime("%Y-%m-%d"),
+                "week": week_no,
                 "options": day_options
-            }
-            
-            # Add the academic week only if it is during the semester
-            if week_no is not None:
-                report_entry["week"] = week_no
-
-            final_report.append(report_entry)
+            })
 
     return final_report
 
