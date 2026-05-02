@@ -113,6 +113,10 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
     duration_min = req.duration * 60
 
     for target_date in days_to_check:
+        # Get academic context (semester and week number) for the specific date
+        semester, week_no = get_academic_context(target_date, all_calendar_entries)
+        
+        # Collect constraints for the day
         constraints = get_admin_constraints_for_day(db, req, target_date, all_calendar_entries)
         day_options = []
 
@@ -161,10 +165,17 @@ def find_admin_free_slots(db: Session, req: AdminEventRequest):
 
         if day_options:
             day_options.sort(key=lambda x: (x['start_time']))
-            final_report.append({
+            
+            report_entry = {
                 "date": target_date.strftime("%Y-%m-%d"),
                 "options": day_options
-            })
+            }
+            
+            # Add the academic week only if it is during the semester
+            if week_no is not None:
+                report_entry["week"] = week_no
+
+            final_report.append(report_entry)
 
     return final_report
 
