@@ -148,12 +148,26 @@ async def populate():
             await asyncio.sleep(random.uniform(6.0, 7.0))
 
         # --- PHASE 2: UNIQUE PROFESSORS ---
+        # 1. Professors detected from the group schedules already downloaded in Phase 1
         prof_ids_query = db.query(distinct(Schedule.teacher_id)).filter(
             Schedule.id_url.like('g%'),
             Schedule.teacher_id.isnot(None)
         ).all()
-        prof_ids = [row[0] for row in prof_ids_query]
-        professor_entities = db.query(Professor).filter(Professor.id.in_(prof_ids)).all()
+        detected_prof_ids = [row[0] for row in prof_ids_query]
+
+        # 2. Query professors who officially belong to FIESC in the database
+        fiesc_prof_entities = db.query(Professor).filter(
+            Professor.faculty_id == FIESC_FACULTY_ID
+        ).all()
+        fiesc_prof_ids = [p.id for p in fiesc_prof_entities]
+
+        # 3. Combine IDs from both sources into a set to eliminate duplicates
+        all_unique_prof_ids = list(set(detected_prof_ids + fiesc_prof_ids))
+
+        # 4. Extract the complete professor entities that are in this combined list
+        professor_entities = db.query(Professor).filter(
+            Professor.id.in_(all_unique_prof_ids)
+        ).all()
         
         total_profs = len(professor_entities)
         print(f"--- Phase 2: DETECTED PROFESSORS ({total_profs} entities) ---")
