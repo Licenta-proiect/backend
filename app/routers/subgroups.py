@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.models import Schedule, Subgroup, Professor, Room
 from app.schemas.user import AlternativeSlotRequest
+from app.services.free_slot import get_max_week_for_groups
 from app.services.reservation import get_reservations_by_subgroups
 from app.services.alternative_slot import get_data_for_optimization, find_alternative_slots
 from app.services.future_weeks import get_future_weeks_logic
@@ -196,7 +197,10 @@ async def search_alternative_slots(
         info_msg = None
         if not processed_results:
             if not raw_alternatives:
-                info_msg = f"Nu există rezultate pentru filtrele selectate."
+                if get_max_week_for_groups(db, [req.selected_group_id], current_semester) == 10:
+                    info_msg = f"Nu se pot căuta recuperări deoarece subgrupa selectată este an terminal și nu mai are activități planificate."
+                else:
+                    info_msg = f"Nu există rezultate pentru filtrele selectate."
             else:
                 info_msg = f"Toate sloturile pentru '{req.selected_subject}' s-au desfășurat deja. Nu mai sunt activități viitoare."
 
