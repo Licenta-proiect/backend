@@ -197,7 +197,7 @@ async def get_group_activity_types(
     db: Session = Depends(get_db)
 ):
     """
-    Returns unique activity types (Lecture, Lab, etc.) excluding 'Curs' 
+    Returns unique activity types (Lecture, Lab, Sem, etc.) excluding 'Curs' 
     that a specific subgroup has in its schedule.
     """
     # Verify if the subgroup exists
