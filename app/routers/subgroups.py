@@ -172,7 +172,7 @@ async def search_alternative_slots(
             sg_obj = subgroups_map.get(sg_id)
             
             if sg_obj:
-                group_name = f"{sg_obj.specialization_short_name} • an {sg_obj.study_year} • {sg_obj.group_name}{sg_obj.subgroup_index}"
+                group_name = f"{sg_obj.specialization_short_name} an {sg_obj.study_year} {sg_obj.group_name}{sg_obj.subgroup_index}"
             else:
                 group_name = f"Grupa {sg_id}"
 
