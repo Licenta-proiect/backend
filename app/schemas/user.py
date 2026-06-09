@@ -165,3 +165,10 @@ class AdminCancelEventRequest(BaseModel):
 
     class Config:
         populate_by_name = True
+
+class OTPRequest(BaseModel):
+    email: EmailStr
+
+class OTPLoginVerify(BaseModel):
+    email: EmailStr
+    code: str
