@@ -8,11 +8,10 @@ import pyotp
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.services.auth import (
-    ALGORITHM, SECRET_KEY, generate_otp_secret, oauth, create_access_token, handle_google_login, get_current_user
+    ALGORITHM, SECRET_KEY, generate_otp_secret, get_passwordless_otp_verifier, oauth, create_access_token, handle_google_login, get_current_user, verify_passwordless_login
 )
-
-from app.schemas.user import ProfessorAccessRequestCreate
-from app.models.models import ProfessorEmailRequest, User, UserRole
+from app.schemas.user import OTPLoginVerify, OTPRequest, ProfessorAccessRequestCreate
+from app.models.models import Professor, ProfessorEmailRequest, User, UserRole
 from app.services.email import send_2fa_email
 from app.services.scraper import clean_val
 from app.utils.config import settings
@@ -174,3 +173,69 @@ async def verify_2fa(data: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Sesiunea de verificare a expirat")
     except Exception:
         raise HTTPException(status_code=401, detail="Token invalid")
+    
+@router.post("/auth/passwordless/request", dependencies=[Depends(verify_system_available)])
+async def request_passwordless_code(data: OTPRequest, db: Session = Depends(get_db)):
+    """
+    Endpoint pentru solicitarea unui cod magic pe e-mail.
+    Verifică eligibilitatea domeniului/orarului înainte de a trimite e-mailul.
+    """
+    email = data.email.lower().strip()
+    
+    # 1. Verificăm dacă e-mailul este eligibil (student, profesor cu orar sau admin existent)
+    user_exists = db.query(User).filter(User.email == email).first()
+    
+    if not user_exists:
+        is_professor = db.query(Professor).filter(
+            Professor.email_address == email,
+            Professor.has_schedule == True
+        ).first()
+        
+        is_student = email.endswith("@student.usv.ro")
+        is_admin = email == settings.ADMIN_EMAIL
+        
+        if not (is_professor or is_student or is_admin):
+            raise HTTPException(
+                status_code=403,
+                detail="Doar studenții și profesorii de la FIESC cu orar activ pot accesa sistemul."
+            )
+            
+    # 2. Generăm codul determinist valabil 5 minute
+    totp = get_passwordless_otp_verifier(email)
+    otp_code = totp.now()
+    
+    # 3. Trimitem e-mailul prin smtplib folosind funcția ta existentă
+    email_sent = send_2fa_email(email, otp_code)
+    if not email_sent:
+        raise HTTPException(
+            status_code=500,
+            detail="Eroare la trimiterea e-mailului de verificare. Încercați din nou."
+        )
+        
+    return {"message": "Codul de verificare a fost trimis cu succes pe e-mail."}
+
+
+@router.post("/auth/passwordless/verify", dependencies=[Depends(verify_system_available)])
+async def verify_passwordless_code(payload: OTPLoginVerify, db: Session = Depends(get_db)):
+    """
+    Endpoint pentru verificarea codului și emiterea tokenului JWT final de acces.
+    """
+    email = payload.email.lower().strip()
+    code = payload.code.strip()
+    
+    # Verifică codul și întoarce utilizatorul logat/înregistrat
+    user = await verify_passwordless_login(email, code, db)
+    
+    # Generăm tokenul de acces final pe 24 ore folosind funcția ta curentă
+    access_token = create_access_token(data={"sub": user.email, "role": user.role})
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "email": user.email,
+            "role": user.role,
+            "first_name": user.first_name,
+            "last_name": user.last_name
+        }
+    }
