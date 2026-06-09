@@ -1,5 +1,5 @@
 # app\routers\auth.py
-from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi import APIRouter, Depends, Request, HTTPException, status
 from datetime import datetime, timedelta, timezone
 from fastapi.responses import RedirectResponse
 import urllib.parse
@@ -177,12 +177,12 @@ async def verify_2fa(data: dict, db: Session = Depends(get_db)):
 @router.post("/auth/passwordless/request", dependencies=[Depends(verify_system_available)])
 async def request_passwordless_code(data: OTPRequest, db: Session = Depends(get_db)):
     """
-    Endpoint pentru solicitarea unui cod magic pe e-mail.
-    Verifică eligibilitatea domeniului/orarului înainte de a trimite e-mailul.
+    Endpoint to request a passwordless magic code via email.
+    Verifies domain and schedule eligibility constraints before dispatching the email.
     """
     email = data.email.lower().strip()
     
-    # 1. Verificăm dacă e-mailul este eligibil (student, profesor cu orar sau admin existent)
+    # 1. Verify if the email is eligible (existing user, professor with active schedule, or admin)
     user_exists = db.query(User).filter(User.email == email).first()
     
     if not user_exists:
@@ -196,37 +196,37 @@ async def request_passwordless_code(data: OTPRequest, db: Session = Depends(get_
         
         if not (is_professor or is_student or is_admin):
             raise HTTPException(
-                status_code=403,
-                detail="Doar studenții și profesorii de la FIESC cu orar activ pot accesa sistemul."
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only students and FIESC professors with an active schedule can access the system."
             )
             
-    # 2. Generăm codul determinist valabil 5 minute
+    # 2. Generate the deterministic TOTP magic token valid for 5 minutes
     totp = get_passwordless_otp_verifier(email)
     otp_code = totp.now()
     
-    # 3. Trimitem e-mailul prin smtplib folosind funcția ta existentă
+    # 3. Dispatch the email securely via SMTP
     email_sent = send_2fa_email(email, otp_code)
     if not email_sent:
         raise HTTPException(
-            status_code=500,
-            detail="Eroare la trimiterea e-mailului de verificare. Încercați din nou."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send the verification email. Please try again."
         )
         
-    return {"message": "Codul de verificare a fost trimis cu succes pe e-mail."}
+    return {"message": "Verification code has been successfully sent to your email."}
 
 
 @router.post("/auth/passwordless/verify", dependencies=[Depends(verify_system_available)])
 async def verify_passwordless_code(payload: OTPLoginVerify, db: Session = Depends(get_db)):
     """
-    Endpoint pentru verificarea codului și emiterea tokenului JWT final de acces.
+    Endpoint to verify the magic code and issue the final access JWT token.
     """
     email = payload.email.lower().strip()
     code = payload.code.strip()
     
-    # Verifică codul și întoarce utilizatorul logat/înregistrat
+    # Verify the incoming token and retrieve or register the validated user identity context
     user = await verify_passwordless_login(email, code, db)
     
-    # Generăm tokenul de acces final pe 24 ore folosind funcția ta curentă
+    # Generate the standard 24-hour final JWT access token using the signature service
     access_token = create_access_token(data={"sub": user.email, "role": user.role})
     
     return {
