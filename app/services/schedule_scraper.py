@@ -2,6 +2,7 @@
 import random
 import httpx
 import asyncio
+from fastapi import status 
 from app.services.scraper import clean_val
 from sqlalchemy import distinct, text
 from sqlalchemy.orm import Session
@@ -22,7 +23,7 @@ async def fetch_json(client, url):
     """
     try:
         response = await client.get(url, timeout=20.0)
-        if response.status_code == 200:
+        if response.status_code == status.HTTP_200_OK:
             return response.json()
     except Exception as e:
         print(f"Error at {url}: {e}")

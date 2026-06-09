@@ -1,5 +1,5 @@
 # app\routers\professors.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.db.session import get_db
@@ -26,7 +26,7 @@ async def get_professor_subjects(email: str, db: Session = Depends(get_db)):
     
     if not professor:
         raise HTTPException(
-            status_code=404, 
+            status_code=status.HTTP_404_NOT_FOUND, 
             detail="Profesorul cu acest email nu a fost găsit în baza de date."
         )
 
@@ -60,7 +60,7 @@ async def get_professor_groups(email: str, db: Session = Depends(get_db)):
     # 1. Identify the professor to get their ID
     professor = db.query(Professor).filter(Professor.email_address == email).first()
     if not professor:
-        raise HTTPException(status_code=404, detail="Profesorul nu a fost găsit.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profesorul nu a fost găsit.")
 
     # 2. Search the Schedule for all group-type id_urls ('g...') where this professor appears
     # teacher_id is saved on all event rows (including group rows)
@@ -114,7 +114,7 @@ async def get_professor_rooms(email: str, db: Session = Depends(get_db)):
     # 1. Identify the professor to get their internal ID
     professor = db.query(Professor).filter(Professor.email_address == email).first()
     if not professor:
-        raise HTTPException(status_code=404, detail="Profesorul nu a fost găsit.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profesorul nu a fost găsit.")
 
     # 2. Search the Schedule for all distinct room_ids for this professor
     # Use id_url.like('g%') to ensure we only get rooms from synchronized group schedules
@@ -171,7 +171,7 @@ async def get_groups_by_subject(
     # 1. Identify the professor
     professor = db.query(Professor).filter(Professor.email_address == email).first()
     if not professor:
-        raise HTTPException(status_code=404, detail="Profesorul nu a fost găsit.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profesorul nu a fost găsit.")
 
     # 2. Obtain the "anchor" data set (groups that have the subject with the exact name)
     # Search group-type records ('g%')
@@ -265,7 +265,7 @@ async def get_rooms_by_subject(
     # 1. Identify the professor by email
     professor = db.query(Professor).filter(Professor.email_address == email).first()
     if not professor:
-        raise HTTPException(status_code=404, detail="Profesorul nu a fost găsit.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profesorul nu a fost găsit.")
 
     # 2. Search Schedule for all distinct room_ids where the professor teaches that subject
     # Use id_url.like('g%') to limit results to synchronized group schedules

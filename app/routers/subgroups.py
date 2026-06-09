@@ -1,5 +1,5 @@
 # app\routers\subgroups.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.models import Schedule, Subgroup, Professor, Room
@@ -53,7 +53,7 @@ async def get_subgroup_subjects(subgroup_id: int, db: Session = Depends(get_db))
     subgroup = db.query(Subgroup).filter(Subgroup.id == subgroup_id).first()
     if not subgroup:
         raise HTTPException(
-            status_code=404, 
+            status_code=status.HTTP_404_NOT_FOUND, 
             detail="Subgrupa nu a fost găsită în baza de date."
         )
 
@@ -110,7 +110,7 @@ async def search_alternative_slots(
     # Obtain raw data from the service
     data = get_data_for_optimization(db, req)
     if "error" in data:
-        raise HTTPException(status_code=400, detail=data["error"])
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=data["error"])
     
     if "info" in data:
         return {
@@ -126,7 +126,7 @@ async def search_alternative_slots(
     if is_after_last_week:
         # All 14 weeks have ended -> Show status (Session/Vacation/etc.)
         raise HTTPException(
-            status_code=400, 
+            status_code=status.HTTP_400_BAD_REQUEST, 
             detail=f"Nu se pot căuta recuperări deoarece suntem în perioada de {current_status.lower()}."
         )
         
@@ -219,7 +219,7 @@ async def search_alternative_slots(
 
     except Exception as e:
         print(f"❌ Error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Eroare internă: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Eroare internă: {str(e)}")
     
 @router.get("/reservations")
 def get_all_subgroup_reservations(db: Session = Depends(get_db)):

@@ -121,7 +121,7 @@ async def request_professor_access(data: ProfessorAccessRequestCreate, db: Sessi
     ).first()
 
     if existing_request:
-        raise HTTPException(status_code=400, detail="Există deja o cerere în curs pentru acest email.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Există deja o cerere în curs pentru acest email.")
 
     new_request = ProfessorEmailRequest(
         first_name=clean_val(data.first_name),
@@ -147,13 +147,13 @@ async def verify_2fa(data: dict, db: Session = Depends(get_db)):
         # Decode and validate temporary token
         payload = jwt.decode(temp_token, SECRET_KEY, algorithms=[ALGORITHM])
         if not payload.get("pending_2fa"):
-            raise HTTPException(status_code=401, detail="Acces neautorizat")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Acces neautorizat")
         
         user_email = payload.get("sub")
         user = db.query(User).filter(User.email == user_email).first()
         
         if not user or not user.otp_secret:
-            raise HTTPException(status_code=401, detail="Sesiune invalidă")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesiune invalidă")
 
         # Verify OTP code
         totp = pyotp.TOTP(user.otp_secret, interval=300)
@@ -168,11 +168,11 @@ async def verify_2fa(data: dict, db: Session = Depends(get_db)):
                 "email": user.email
             }
         else:
-            raise HTTPException(status_code=400, detail="Cod incorect sau expirat")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cod incorect sau expirat")
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Sesiunea de verificare a expirat")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesiunea de verificare a expirat")
     except Exception:
-        raise HTTPException(status_code=401, detail="Token invalid")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalid")
     
 @router.post("/auth/passwordless/request", dependencies=[Depends(verify_system_available)])
 async def request_passwordless_code(data: OTPRequest, db: Session = Depends(get_db)):
@@ -213,7 +213,6 @@ async def request_passwordless_code(data: OTPRequest, db: Session = Depends(get_
         )
         
     return {"message": "Verification code has been successfully sent to your email."}
-
 
 @router.post("/auth/passwordless/verify", dependencies=[Depends(verify_system_available)])
 async def verify_passwordless_code(payload: OTPLoginVerify, db: Session = Depends(get_db)):

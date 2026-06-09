@@ -1,5 +1,5 @@
 # app\routers\admin.py
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 def check_admin(user: User):
     """Verifies if the user has an administrator role."""
     if user.role != UserRole.ADMIN.value:
-        raise HTTPException(status_code=403, detail="Access denied. Admin role required.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied. Admin role required.")
 
 # --- USER MANAGEMENT ROUTES ---
 @router.get("/users", response_model=List[UserResponse])
@@ -48,7 +48,7 @@ async def create_user(
     # 1. Check if the user already exists in the users table
     existing_user = db.query(User).filter(User.email == user_in.email).first() 
     if existing_user:
-        raise HTTPException(status_code=400, detail="Email deja înregistrat.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email deja înregistrat.")
     
     # 2. Initialize new user
     new_user = User(
@@ -69,7 +69,7 @@ async def create_user(
         else:
             # If the professor is not in the schedule database, we refuse creation
             raise HTTPException(
-                status_code=404, 
+                status_code=status.HTTP_404_NOT_FOUND, 
                 detail="Acest email nu a fost găsit în lista oficială de profesori (orar)."
             )
 
@@ -78,7 +78,7 @@ async def create_user(
         db.commit() 
     except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail="Eroare la salvarea în baza de date.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Eroare la salvarea în baza de date.")
 
     return {"message": f"Utilizatorul {user_in.first_name} {user_in.last_name} a fost creat cu succes sub rolul de {user_in.role}."}
 
@@ -93,19 +93,19 @@ async def delete_user(
     
     user_to_delete = db.query(User).filter(User.email == email).first() 
     if not user_to_delete:
-        raise HTTPException(status_code=404, detail="Utilizatorul nu a fost găsit.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilizatorul nu a fost găsit.")
     
     # Check if the target user is the main admin (ID 1)
     if user_to_delete.id == 1:
         raise HTTPException(
-            status_code=403, 
+            status_code=status.HTTP_403_FORBIDDEN, 
             detail="Administratorul principal al sistemului nu poate fi șters."
         )
     
     # Prevent an admin from deleting themselves
     if user_to_delete.id == admin_user.id:
         raise HTTPException(
-            status_code=400, 
+            status_code=status.HTTP_400_BAD_REQUEST, 
             detail="Nu îți poți șterge propriul cont din această interfață."
         )
 
@@ -128,7 +128,7 @@ async def update_user(
     # Search for user by current email
     user = db.query(User).filter(User.email == email).first()
     if not user:
-        raise HTTPException(status_code=404, detail="Utilizatorul nu a fost găsit.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilizatorul nu a fost găsit.")
     
     # --- PROTECTION LOGIC ---
     
@@ -138,14 +138,14 @@ async def update_user(
         # 1. Main Admin Protection (ID 1)
         if user.id == 1:
             raise HTTPException(
-                status_code=403, 
+                status_code=status.HTTP_403_FORBIDDEN, 
                 detail="Email-ul administratorului principal nu poate fi modificat din motive de securitate."
             )
         
         # 2. Self-Modification Protection
         if user.id == admin_user.id:
             raise HTTPException(
-                status_code=400, 
+                status_code=status.HTTP_400_BAD_REQUEST, 
                 detail="Nu îți poți modifica propriul email din această interfață (ar duce la deconectare imediată)."
             )
 
@@ -160,7 +160,7 @@ async def update_user(
         # Check if the new email is already used by someone else
         email_taken = db.query(User).filter(User.email == update_data.new_email).first()
         if email_taken:
-            raise HTTPException(status_code=400, detail="Noul email este deja înregistrat.")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Noul email este deja înregistrat.")
         
         # Manual sync in the Professors table
         if user.professor_info:
@@ -174,7 +174,7 @@ async def update_user(
         db.refresh(user)
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Eroare la salvare: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Eroare la salvare: {str(e)}")
 
     return user
 
@@ -217,10 +217,10 @@ async def approve_professor_request(
     # 1. Find the request
     request_obj = db.query(ProfessorEmailRequest).filter(ProfessorEmailRequest.id == request_id).first()
     if not request_obj:
-        raise HTTPException(status_code=404, detail="Cererea nu a fost găsită.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cererea nu a fost găsită.")
     
     if request_obj.status != "pending":
-        raise HTTPException(status_code=400, detail="Cererea a fost deja procesată.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cererea a fost deja procesată.")
 
     # 2. Search for the corresponding professor
     professor = db.query(Professor).filter(
@@ -234,7 +234,7 @@ async def approve_professor_request(
         request_obj.resolution_date = datetime.now(timezone.utc)
         db.commit()
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Nu s-a găsit niciun profesor potrivit fără email. Cererea a fost respinsă automat."
         )
 
@@ -245,7 +245,7 @@ async def approve_professor_request(
         request_obj.resolution_date = datetime.now(timezone.utc)
         db.commit()
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email-ul este deja atribuit altui profesor. Cererea a fost respinsă automat."
         )
 
@@ -268,7 +268,7 @@ async def approve_professor_request(
             db.commit()
         except:
             pass
-        raise HTTPException(status_code=500, detail=f"Eroare la procesare: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Eroare la procesare: {str(e)}")
 
 @router.post("/requests/reject/{request_id}", dependencies=[Depends(verify_system_available)])
 async def reject_professor_request(
@@ -282,11 +282,11 @@ async def reject_professor_request(
     request_obj = db.query(ProfessorEmailRequest).filter(ProfessorEmailRequest.id == request_id).first()
     
     if not request_obj:
-        raise HTTPException(status_code=404, detail="Cererea nu a fost găsită.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cererea nu a fost găsită.")
     
     if request_obj.status != "pending":
         raise HTTPException(
-            status_code=400, 
+            status_code=status.HTTP_400_BAD_REQUEST, 
             detail=f"Cererea are deja statusul: {request_obj.status}."
         )
 
@@ -304,7 +304,7 @@ async def reject_professor_request(
             db.commit()
         except:
             pass
-        raise HTTPException(status_code=500, detail=f"Eroare la respingerea cererii: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Eroare la respingerea cererii: {str(e)}")
 
 # --- SCHEDULE SYNC ROUTES ---
 
@@ -332,7 +332,7 @@ async def sync_calendar(bg: BackgroundTasks, user: User = Depends(get_current_us
         run_backup_process() 
     except Exception as e:
         print(f"Backup failed: {e}")
-        raise HTTPException(status_code=500, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
 
     bg.add_task(run_sync_with_logging, populate_calendar, "Calendar")
     return {"message": "Sincronizare calendar pornită."}
@@ -346,7 +346,7 @@ async def sync_schedule(bg: BackgroundTasks, user: User = Depends(get_current_us
         run_backup_process() 
     except Exception as e:
         print(f"Backup failed: {e}")
-        raise HTTPException(status_code=500, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
 
     bg.add_task(run_sync_with_logging, populate_orar, "Schedule")
     return {"message": "Sincronizare orar pornită."}
@@ -363,7 +363,7 @@ async def sync_full_db_schedule(bg: BackgroundTasks, user: User = Depends(get_cu
         run_backup_process() 
     except Exception as e:
         print(f"Backup failed: {e}")
-        raise HTTPException(status_code=500, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Backup-ul a eșuat. Sincronizarea a fost oprită pentru siguranță.")
 
     bg.add_task(run_sync_with_logging, sync_base_and_schedule_logic, "Base + Schedule")
     return {"message": "Sincronizarea combinată (Bază + Orar) a pornit în fundal."}
@@ -467,15 +467,15 @@ async def update_backup_settings(
     scheduler in real-time without restarting the server.
     """
     check_admin(user)
-    status = db.query(SystemStatus).first()
+    system_status = db.query(SystemStatus).first()
     
-    if not status:
-        raise HTTPException(status_code=404, detail="System status not found.")
+    if not system_status:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="System status not found.")
 
     # 1. We update the database
-    status.backup_enabled = settings.backup_enabled
-    status.backup_interval = settings.backup_interval
-    status.backup_time = settings.backup_time
+    system_status.backup_enabled = settings.backup_enabled
+    system_status.backup_interval = settings.backup_interval
+    system_status.backup_time = settings.backup_time
     db.commit()
 
     # 2. We update the Scheduler in real time

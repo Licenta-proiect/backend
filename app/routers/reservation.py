@@ -1,7 +1,6 @@
 # app\routers\reservation.py
 from datetime import timedelta
-
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.schemas.user import AdminCancelEventRequest, AdminEventConfirmationRequest, SlotReservationRequest, FreeSlotRequest, ReservationCancellationRequest
@@ -35,7 +34,7 @@ def search_free_slots(req: FreeSlotRequest, db: Session = Depends(get_db)):
     data_result = get_schedule_and_reservation_data(db, req, current_semester)
     
     if "error" in data_result:
-        raise HTTPException(status_code=400, detail=data_result["error"])
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=data_result["error"])
     if "info" in data_result:
         return {"info": data_result["info"], "slots": {}}
 
@@ -94,14 +93,14 @@ def reserve_free_slot(
     # reservation for their own email, not someone else's.
     if current_user.email != req.email:
         raise HTTPException(
-            status_code=403, 
+            status_code=status.HTTP_403_FORBIDDEN, 
             detail="Nu aveți permisiunea de a crea o rezervare pentru alt profesor."
         )
 
     result = create_slot_reservation(db, req)
     
     if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result["error"])
     
     return result
 
@@ -119,7 +118,7 @@ def cancel_existing_reservation(
     # Verify identity (token must match the email in the request)
     if current_user.email != req.email:
         raise HTTPException(
-            status_code=403, 
+            status_code=status.HTTP_403_FORBIDDEN, 
             detail="Puteți anula doar propriile rezervări."
         )
 
@@ -127,7 +126,7 @@ def cancel_existing_reservation(
     result = cancel_reservation(db, req)
     
     if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result["error"])
     
     return result
 
@@ -145,7 +144,7 @@ def search_admin_event_slots(
     # 1. Security: Only administrators can use this hybrid search
     if current_user.role != UserRole.ADMIN.value:
         raise HTTPException(
-            status_code=403,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Acces interzis. Doar administratorii pot planifica evenimente."
         )
     
@@ -156,7 +155,7 @@ def search_admin_event_slots(
     # Case 1: The entire range ends strictly before today
     if req.end_date < today:
         raise HTTPException(
-            status_code=400, 
+            status_code=status.HTTP_400_BAD_REQUEST, 
             detail="Nu se pot căuta sloturi libere pentru o perioadă care a trecut deja."
         )
     
@@ -164,7 +163,7 @@ def search_admin_event_slots(
     # This covers cases where both start and end are today, or just the end is today.
     if req.end_date == today:
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Nu se pot face rezervări în aceeași zi."
         )
 
@@ -177,7 +176,7 @@ def search_admin_event_slots(
     try:
         results = find_admin_free_slots(db, req)
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Eroare internă la procesarea solverului.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Eroare internă la procesarea solverului.")
 
     # 3. If no slots are found, return an object with an empty list and info
     if not results:
@@ -210,14 +209,14 @@ def confirm_admin_event(
     # Security: Only administrators can use this hybrid search
     if current_user.role != UserRole.ADMIN.value:
         raise HTTPException(
-            status_code=403, 
+            status_code=status.HTTP_403_FORBIDDEN, 
             detail="Doar administratorii pot rezerva evenimente."
         )
 
     result = create_admin_event_reservation(db, req)
 
     if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result["error"])
 
     return result
 
@@ -233,7 +232,7 @@ def cancel_admin_event_route(
     # Security check: Must be ADMIN
     if current_user.role != UserRole.ADMIN.value:
         raise HTTPException(
-            status_code=403, 
+            status_code=status.HTTP_403_FORBIDDEN, 
             detail="Acces interzis. Doar administratorii pot anula evenimente administrative."
         )
 
@@ -241,6 +240,6 @@ def cancel_admin_event_route(
     result = cancel_admin_event(db, req.reservation_id, req.reason)
 
     if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result["error"])
 
     return result

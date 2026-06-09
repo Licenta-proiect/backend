@@ -59,15 +59,15 @@ async def get_current_user(request: Request, db: Session = Depends(get_db), auth
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
         if email is None:
-            raise HTTPException(status_code=401, detail="Token invalid")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalid")
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token-ul a expirat. Te rugăm să te loghezi din nou.")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token-ul a expirat. Te rugăm să te loghezi din nou.")
     except JWTError:
-        raise HTTPException(status_code=401, detail="Token invalid.")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalid.")
 
     user = db.query(User).filter(User.email == email).first()
     if not user:
-        raise HTTPException(status_code=401, detail="Utilizator inexistent")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Utilizator inexistent")
     return user
 
 def get_or_create_user_identity(email: str, db: Session, default_first: str = None, default_last: str = None) -> User:
