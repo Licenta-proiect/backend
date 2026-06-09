@@ -70,9 +70,12 @@ async def get_current_user(request: Request, db: Session = Depends(get_db), auth
         raise HTTPException(status_code=401, detail="Utilizator inexistent")
     return user
 
-async def handle_google_login(user_info: dict, db: Session):
-    """Handles registration/authentication logic after the Google callback."""
-    email = user_info['email']
+def get_or_create_user_identity(email: str, db: Session, default_first: str = None, default_last: str = None) -> User:
+    """
+    Shared internal helper to evaluate system eligibility constraints,
+    map academic roles, and get or create a database User record.
+    """
+    email = clean_val(email.lower().strip())
     user = db.query(User).filter(User.email == email).first()
     
     if not user:
@@ -96,19 +99,36 @@ async def handle_google_login(user_info: dict, db: Session):
                 detail="Doar studenții și profesorii de la FIESC cu orar activ pot accesa sistemul."
             )
 
-        # Create the new user with teacher_id if found
+        # Fallback parsing strategy from email strings if defaults aren't provided
+        final_first = default_first or email.split('.')[0].capitalize()
+        final_last = default_last or email.split('@')[0].split('.')[-1].capitalize()
+
+        # Provision the brand new synchronized User entity
         user = User(
-            email=clean_val(email),
-            first_name=clean_val(user_info.get('given_name')),
-            last_name=clean_val(user_info.get('family_name')),
+            email=email,
+            first_name=clean_val(final_first),
+            last_name=clean_val(final_last),
             role=new_role,
-            teacher_id=teacher_id  # Automatic link established on first login
+            teacher_id=teacher_id
         )
         db.add(user)
+        
+    return user
+
+async def handle_google_login(user_info: dict, db: Session):
+    """Handles registration/authentication logic after the Google callback."""
+    email = user_info['email']
+    
+    # Delegate identity resolution logic to the shared core helper
+    user = get_or_create_user_identity(
+        email=email,
+        db=db,
+        default_first=user_info.get('given_name'),
+        default_last=user_info.get('family_name')
+    )
 
     # Set the current login time for all users
     user.last_login = datetime.now(timezone.utc)
-
     db.commit()
     db.refresh(user)
 
@@ -116,60 +136,36 @@ async def handle_google_login(user_info: dict, db: Session):
 
 def get_passwordless_otp_verifier(email: str):
     """
-    Generează un secret deterministic pe baza e-mailului 
-    pentru a nu depinde de stocarea prealabilă în baza de date.
-    Codul va fi valabil 5 minute (interval=300).
+    Generates a deterministic TOTP secret based on the user's email address.
+    This eliminates the need to persist and fetch temporary OTP secrets in the database.
+    The generated token is valid for 5 minutes (interval=300 seconds).
     """
     encoded_bytes = base64.b32encode(email.encode('utf-8'))
+    
+    # Decode bytes back to a string and strip padding characters '=' for pyotp compatibility
     secret_b32 = encoded_bytes.decode('utf-8').replace('=', '')[:32]
-    # Completăm până la 32 de caractere dacă este prea scurt
+    
+    # Pad the string with a trailing 'A' fallback if the generated length is under 32 characters
     if len(secret_b32) < 32:
         secret_b32 = secret_b32.ljust(32, 'A')
+        
     return pyotp.TOTP(secret_b32, interval=300)
 
-async def verify_passwordless_login(email: str, code: str, db: Session):
+async def verify_passwordless_login(email: str, code: str, db: Session) -> User:
     """
-    Validează codul OTP și returnează/creează utilizatorul conform regulilor din sistem.
+    Validates the temporary TOTP magic code and handles user authentication/provisioning.
     """
     totp = get_passwordless_otp_verifier(email)
     
-    # Validare cod numeric
+    # Enforce safe verification of numeric TOTP tokens
     if not totp.verify(code):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
             detail="Codul de verificare este incorect sau a expirat."
         )
     
-    # Verificăm dacă utilizatorul există deja
-    user = db.query(User).filter(User.email == email).first()
-    
-    if not user:
-        # Aplicăm exact aceeași logică de business ca la Google Login
-        professor_data = db.query(Professor).filter(
-            Professor.email_address == email,
-            Professor.has_schedule == True
-        ).first()
-        
-        teacher_id = None
-        if professor_data:
-            new_role = UserRole.PROFESSOR.value
-            teacher_id = professor_data.id
-        elif email.endswith("@student.usv.ro"):
-            new_role = UserRole.STUDENT.value
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, 
-                detail="Doar studenții și profesorii de la FIESC cu orar activ pot accesa sistemul."
-            )
-            
-        user = User(
-            email=clean_val(email),
-            first_name=clean_val(email.split('.')[0].capitalize()), # fallback din e-mail
-            last_name=clean_val(email.split('@')[0].split('.')[-1].capitalize()), # fallback
-            role=new_role,
-            teacher_id=teacher_id
-        )
-        db.add(user)
+    # Delegate identity resolution logic to the shared core helper
+    user = get_or_create_user_identity(email=email, db=db)
         
     user.last_login = datetime.now(timezone.utc)
     db.commit()
