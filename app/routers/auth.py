@@ -197,7 +197,7 @@ async def request_passwordless_code(data: OTPRequest, db: Session = Depends(get_
         if not (is_professor or is_student or is_admin):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only students and FIESC professors with an active schedule can access the system."
+                detail="Doar studenții și profesorii de la FIESC cu orar activ pot accesa sistemul."
             )
             
     # 2. Generate the deterministic TOTP magic token valid for 5 minutes
@@ -209,10 +209,10 @@ async def request_passwordless_code(data: OTPRequest, db: Session = Depends(get_
     if not email_sent:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to send the verification email. Please try again."
+            detail="Eroare la trimiterea e-mailului de verificare. Încercați din nou."
         )
         
-    return {"message": "Verification code has been successfully sent to your email."}
+    return {"message": "Codul de verificare a fost trimis cu succes pe e-mail."}
 
 @router.post("/auth/passwordless/verify", dependencies=[Depends(verify_system_available)])
 async def verify_passwordless_code(payload: OTPLoginVerify, db: Session = Depends(get_db)):
