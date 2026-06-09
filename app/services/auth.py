@@ -1,4 +1,5 @@
 # app\services\auth.py
+import base64
 from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 from fastapi import Request, HTTPException, Depends, status
@@ -111,4 +112,67 @@ async def handle_google_login(user_info: dict, db: Session):
     db.commit()
     db.refresh(user)
 
+    return user
+
+def get_passwordless_otp_verifier(email: str):
+    """
+    Generează un secret deterministic pe baza e-mailului 
+    pentru a nu depinde de stocarea prealabilă în baza de date.
+    Codul va fi valabil 5 minute (interval=300).
+    """
+    encoded_bytes = base64.b32encode(email.encode('utf-8'))
+    secret_b32 = encoded_bytes.decode('utf-8').replace('=', '')[:32]
+    # Completăm până la 32 de caractere dacă este prea scurt
+    if len(secret_b32) < 32:
+        secret_b32 = secret_b32.ljust(32, 'A')
+    return pyotp.TOTP(secret_b32, interval=300)
+
+async def verify_passwordless_login(email: str, code: str, db: Session):
+    """
+    Validează codul OTP și returnează/creează utilizatorul conform regulilor din sistem.
+    """
+    totp = get_passwordless_otp_verifier(email)
+    
+    # Validare cod numeric
+    if not totp.verify(code):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Codul de verificare este incorect sau a expirat."
+        )
+    
+    # Verificăm dacă utilizatorul există deja
+    user = db.query(User).filter(User.email == email).first()
+    
+    if not user:
+        # Aplicăm exact aceeași logică de business ca la Google Login
+        professor_data = db.query(Professor).filter(
+            Professor.email_address == email,
+            Professor.has_schedule == True
+        ).first()
+        
+        teacher_id = None
+        if professor_data:
+            new_role = UserRole.PROFESSOR.value
+            teacher_id = professor_data.id
+        elif email.endswith("@student.usv.ro"):
+            new_role = UserRole.STUDENT.value
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="Doar studenții și profesorii de la FIESC cu orar activ pot accesa sistemul."
+            )
+            
+        user = User(
+            email=clean_val(email),
+            first_name=clean_val(email.split('.')[0].capitalize()), # fallback din e-mail
+            last_name=clean_val(email.split('@')[0].split('.')[-1].capitalize()), # fallback
+            role=new_role,
+            teacher_id=teacher_id
+        )
+        db.add(user)
+        
+    user.last_login = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
+    
     return user
