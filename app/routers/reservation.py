@@ -83,7 +83,7 @@ def search_free_slots(req: FreeSlotRequest, db: Annotated[Session, Depends(get_d
 def reserve_free_slot(
     req: SlotReservationRequest, 
     db: Annotated[Session, Depends(get_db)],
-    current_user: User = Depends(get_current_user) # Verify if user is logged in
+    current_user: Annotated[User, Depends(get_current_user)] # Verify if user is logged in
 ):
     """
     Saves the user's chosen reservation in the database.
@@ -109,7 +109,7 @@ def reserve_free_slot(
 def cancel_existing_reservation(
     req: ReservationCancellationRequest, 
     db: Annotated[Session, Depends(get_db)],
-    current_user: User = Depends(get_current_user)
+    current_user: Annotated[User, Depends(get_current_user)]
 ):
     """
     Cancels an existing reservation.
@@ -135,7 +135,7 @@ def cancel_existing_reservation(
 def search_admin_event_slots(
     req: AdminEventRequest, 
     db: Annotated[Session, Depends(get_db)],
-    current_user: User = Depends(get_current_user)
+    current_user: Annotated[User, Depends(get_current_user)]
 ):
     """
     Endpoint dedicated to the administrator to find free slots over a date range.
@@ -202,7 +202,7 @@ def search_admin_event_slots(
 def confirm_admin_event(
     req: AdminEventConfirmationRequest, 
     db: Annotated[Session, Depends(get_db)],
-    current_user: User = Depends(get_current_user)
+    current_user: Annotated[User, Depends(get_current_user)]
 ):
     """
     The route for the administrator who acknowledges and saves the event.
@@ -225,7 +225,7 @@ def confirm_admin_event(
 def cancel_admin_event_route(
     req: AdminCancelEventRequest, 
     db: Annotated[Session, Depends(get_db)],
-    current_user: User = Depends(get_current_user)
+    current_user: Annotated[User, Depends(get_current_user)]
 ):
     """
     Endpoint for administrators to cancel any event.

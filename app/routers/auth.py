@@ -100,7 +100,7 @@ async def auth_callback(request: Request, db: Annotated[Session, Depends(get_db)
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/auth-error?message={error_msg}")
     
 @router.get("/me")
-async def get_me(current_user: User = Depends(get_current_user)):
+async def get_me(current_user: Annotated[User, Depends(get_current_user)]):
     """
     Returns current authenticated user details.
     """

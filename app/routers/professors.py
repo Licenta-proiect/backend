@@ -329,7 +329,7 @@ async def get_rooms_by_subject(
 @router.get("/reservations")
 def list_professor_reservations(
     db: Annotated[Session, Depends(get_db)],
-    current_user: User = Depends(get_current_user)
+    current_user: Annotated[User, Depends(get_current_user)]
 ):
     """
     Returns the list of all reservations made by the logged-in professor,
