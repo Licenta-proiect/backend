@@ -22,12 +22,13 @@ def send_2fa_email(receiver_email: str, otp_code: str):
 
     # HTML body stays in Romanian as it is viewed by the user
     body = f"""
-    <h2>Verificare securitate <b>ReDidact</b></h2>
     <p>Bună ziua,</p>
     <p>Codul tău de verificare pentru accesarea platformei este:</p>
     <h1 style="color: #2563eb; letter-spacing: 5px;">{otp_code}</h1>
-    <p>Acest cod este valabil 5 minute.</p>
-    <p>Dacă nu ai încercat să te loghezi, te rugăm să ignori acest mesaj.</p>
+    <p>Acest cod este valabil timp de 5 minute.</p>
+    <p>Dacă nu ai solicitat acest cod, te rugăm să ignori acest mesaj.</p>
+    <br/>
+    <p>O zi frumoasă,<br/><b>ReDidact</b></p>
     """
     
     message.attach(MIMEText(body, "html"))
