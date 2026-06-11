@@ -1,4 +1,5 @@
 # app\routers\data.py
+from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -16,7 +17,7 @@ router = APIRouter(
 )
 
 @router.get("/professors")
-async def get_active_professors(db: Session = Depends(get_db)):
+async def get_active_professors(db: Annotated[Session, Depends(get_db)]):
     """
     Returns professors who have their schedule downloaded (has_schedule=True).
     """
@@ -37,7 +38,7 @@ async def get_active_professors(db: Session = Depends(get_db)):
     ]
 
 @router.get("/rooms")
-async def get_active_rooms(db: Session = Depends(get_db)):
+async def get_active_rooms(db: Annotated[Session, Depends(get_db)]):
     """
     Returns rooms that have their schedule downloaded (has_schedule=True).
     """
@@ -55,7 +56,7 @@ async def get_active_rooms(db: Session = Depends(get_db)):
     ]
 
 @router.get("/groups")
-async def get_active_groups(db: Session = Depends(get_db)):
+async def get_active_groups(db: Annotated[Session, Depends(get_db)]):
     """
     Returns groups that have their schedule downloaded (has_schedule=True).
     """
@@ -74,7 +75,7 @@ async def get_active_groups(db: Session = Depends(get_db)):
     ]
 
 @router.get("/groups-specialization")
-async def get_groups_specialization(db: Session = Depends(get_db)):
+async def get_groups_specialization(db: Annotated[Session, Depends(get_db)]):
     """
     Returns a list of unique specialization and year combinations,
     including a list of all subgroup IDs for each combination.
@@ -112,7 +113,7 @@ async def get_groups_specialization(db: Session = Depends(get_db)):
     return result
 
 @router.get("/activity-type")
-async def get_activity_types(db: Session = Depends(get_db)):
+async def get_activity_types(db: Annotated[Session, Depends(get_db)]):
     """
     Returns unique activity types (Lecture, Lab, Seminar, etc.)
     extracted directly from the type_long_name column of the Schedule table.
@@ -126,7 +127,7 @@ async def get_activity_types(db: Session = Depends(get_db)):
     return types
 
 @router.get("/weeks")
-async def get_future_weeks(db: Session = Depends(get_db)):
+async def get_future_weeks(db: Annotated[Session, Depends(get_db)]):
     """
     Returns the current semester, remaining lecture weeks, and current status.
     """
@@ -139,7 +140,7 @@ async def get_future_weeks(db: Session = Depends(get_db)):
     }
 
 @router.post("/valid-weeks")
-async def get_valid_weeks(req: WeeksRequest, db: Session = Depends(get_db)):
+async def get_valid_weeks(req: WeeksRequest, db: Annotated[Session, Depends(get_db)]):
     '''
     Returns valid weeks for groups, taking into account the year of study.
     '''
@@ -164,7 +165,7 @@ async def get_valid_weeks(req: WeeksRequest, db: Session = Depends(get_db)):
 async def get_professor_activity_types(
     email: str, 
     subject: str, 
-    db: Session = Depends(get_db)
+    db: Annotated[Session, Depends(get_db)]
 ):
     """
     Returns activity types (Lecture, Lab, etc.) that a professor
@@ -194,7 +195,7 @@ async def get_professor_activity_types(
 async def get_group_activity_types(
     group_id: int, 
     subject: str, 
-    db: Session = Depends(get_db)
+    db: Annotated[Session, Depends(get_db)]
 ):
     """
     Returns unique activity types (Lecture, Lab, Sem, etc.) excluding 'Curs' 
@@ -222,7 +223,7 @@ async def get_group_activity_types(
     return activity_types
 
 @router.get("/academic-structure")
-async def get_academic_structure(db: Session = Depends(get_db)):
+async def get_academic_structure(db: Annotated[Session, Depends(get_db)]):
     """
     Retrieves the full academic year calendar (both semesters), 
     ordered by semester and week number.

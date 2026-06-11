@@ -1,4 +1,5 @@
 # app\routers\auth.py
+from typing import Annotated
 from fastapi import APIRouter, Depends, Request, HTTPException, status
 from datetime import datetime, timedelta, timezone
 from fastapi.responses import RedirectResponse
@@ -39,7 +40,7 @@ async def logout(request: Request):
     return {"message": "Logged out successfully"}
 
 @router.get("/auth/callback", dependencies=[Depends(verify_system_available)])
-async def auth_callback(request: Request, db: Session = Depends(get_db)):
+async def auth_callback(request: Request, db: Annotated[Session, Depends(get_db)]):
     """
     Handles the redirect from Google OAuth and initiates 2FA if necessary.
     """
@@ -110,7 +111,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
     }
 
 @router.post("/request-access", dependencies=[Depends(verify_system_available)])
-async def request_professor_access(data: ProfessorAccessRequestCreate, db: Session = Depends(get_db)):
+async def request_professor_access(data: ProfessorAccessRequestCreate, db: Annotated[Session, Depends(get_db)]):
     """
     Allows a professor to request access if their email is missing.
     """
@@ -136,7 +137,7 @@ async def request_professor_access(data: ProfessorAccessRequestCreate, db: Sessi
     return {"message": "Cererea a fost trimisă cu succes!"}
 
 @router.post("/auth/verify-2fa", dependencies=[Depends(verify_system_available)])
-async def verify_2fa(data: dict, db: Session = Depends(get_db)):
+async def verify_2fa(data: dict, db: Annotated[Session, Depends(get_db)]):
     """
     Validates the OTP code and issues the final access token.
     """
@@ -175,7 +176,7 @@ async def verify_2fa(data: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalid")
     
 @router.post("/auth/passwordless/request", dependencies=[Depends(verify_system_available)])
-async def request_passwordless_code(data: OTPRequest, db: Session = Depends(get_db)):
+async def request_passwordless_code(data: OTPRequest, db: Annotated[Session, Depends(get_db)]):
     """
     Endpoint to request a passwordless magic code via email.
     Verifies domain and schedule eligibility constraints before dispatching the email.
@@ -215,7 +216,7 @@ async def request_passwordless_code(data: OTPRequest, db: Session = Depends(get_
     return {"message": "Codul de verificare a fost trimis cu succes pe e-mail."}
 
 @router.post("/auth/passwordless/verify", dependencies=[Depends(verify_system_available)])
-async def verify_passwordless_code(payload: OTPLoginVerify, db: Session = Depends(get_db)):
+async def verify_passwordless_code(payload: OTPLoginVerify, db: Annotated[Session, Depends(get_db)]):
     """
     Endpoint to verify the magic code and issue the final access JWT token.
     """

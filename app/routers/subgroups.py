@@ -10,6 +10,7 @@ from app.services.alternative_slot import get_data_for_optimization, find_altern
 from app.services.future_weeks import get_future_weeks_logic
 from app.utils.time_helper import get_now
 from app.utils.maintenance import verify_system_available
+from typing import Annotated
 
 # Initialize router
 router = APIRouter(
@@ -45,7 +46,10 @@ def group_consecutive_weeks(weeks):
     return ", ".join(ranges)
 
 @router.get("/subjects")
-async def get_subgroup_subjects(subgroup_id: int, db: Session = Depends(get_db)):
+async def get_subgroup_subjects(
+    subgroup_id: int, 
+    db: Annotated[Session, Depends(get_db)]
+):
     """
     Returns the unique list of subjects for a specific subgroup.
     """
@@ -94,7 +98,7 @@ async def get_subgroup_subjects(subgroup_id: int, db: Session = Depends(get_db))
 @router.post("/search-alternatives")
 async def search_alternative_slots(
     req: AlternativeSlotRequest, 
-    db: Session = Depends(get_db)
+    db: Annotated[Session, Depends(get_db)]
 ):
     """
     Searches for alternative slots for a specific subject, 
@@ -222,7 +226,7 @@ async def search_alternative_slots(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Eroare internă: {str(e)}")
     
 @router.get("/reservations")
-def get_all_subgroup_reservations(db: Session = Depends(get_db)):
+def get_all_subgroup_reservations(db: Annotated[Session, Depends(get_db)]):
     """
     Returns the list of all make-up classes (reservations) in the system, 
     grouped by subgroup ID.

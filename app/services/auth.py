@@ -1,6 +1,7 @@
 # app\services\auth.py
 import base64
 from datetime import datetime, timedelta, timezone
+from typing import Annotated
 from jose import jwt, JWTError
 from fastapi import Request, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -41,7 +42,7 @@ def create_access_token(data: dict):
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-async def get_current_user(request: Request, db: Session = Depends(get_db), auth: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user(request: Request, db: Annotated[Session, Depends(get_db)], auth: HTTPAuthorizationCredentials = Depends(security)):
     """
     Dependency to extract the current user.
     Verifies the token from the Authorization Header: Bearer <token>

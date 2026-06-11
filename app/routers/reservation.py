@@ -1,5 +1,6 @@
 # app\routers\reservation.py
 from datetime import timedelta
+from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.db.session import get_db
@@ -22,7 +23,7 @@ router = APIRouter(
 )
 
 @router.post("/search-free")
-def search_free_slots(req: FreeSlotRequest, db: Session = Depends(get_db)):
+def search_free_slots(req: FreeSlotRequest, db: Annotated[Session, Depends(get_db)]):
     """
     Returns free time intervals for a subject, a set of groups, and rooms,
     checking both the official schedule and existing ad-hoc reservations.
@@ -81,7 +82,7 @@ def search_free_slots(req: FreeSlotRequest, db: Session = Depends(get_db)):
 @router.post("/confirm-reservation")
 def reserve_free_slot(
     req: SlotReservationRequest, 
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)],
     current_user: User = Depends(get_current_user) # Verify if user is logged in
 ):
     """
@@ -107,7 +108,7 @@ def reserve_free_slot(
 @router.post("/cancel-reservation")
 def cancel_existing_reservation(
     req: ReservationCancellationRequest, 
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)],
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -133,7 +134,7 @@ def cancel_existing_reservation(
 @router.post("/search-admin-event")
 def search_admin_event_slots(
     req: AdminEventRequest, 
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)],
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -200,7 +201,7 @@ def search_admin_event_slots(
 @router.post("/confirm-admin-event")
 def confirm_admin_event(
     req: AdminEventConfirmationRequest, 
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)],
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -223,7 +224,7 @@ def confirm_admin_event(
 @router.post("/cancel-admin-event")
 def cancel_admin_event_route(
     req: AdminCancelEventRequest, 
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)],
     current_user: User = Depends(get_current_user)
 ):
     """

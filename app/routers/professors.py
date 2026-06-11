@@ -1,4 +1,5 @@
 # app\routers\professors.py
+from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -16,7 +17,7 @@ router = APIRouter(
 )
 
 @router.get("/subjects")
-async def get_professor_subjects(email: str, db: Session = Depends(get_db)):
+async def get_professor_subjects(email: str, db: Annotated[Session, Depends(get_db)]):
     """
     Returns the unique list of subjects taught by the professor 
     only to subgroups from the FIESC faculty.
@@ -53,7 +54,7 @@ async def get_professor_subjects(email: str, db: Session = Depends(get_db)):
     }
 
 @router.get("/groups")
-async def get_professor_groups(email: str, db: Session = Depends(get_db)):
+async def get_professor_groups(email: str, db: Annotated[Session, Depends(get_db)]):
     """
     Identifies the groups taught by the professor, limited to the FIESC faculty.
     """
@@ -107,7 +108,7 @@ async def get_professor_groups(email: str, db: Session = Depends(get_db)):
     }
 
 @router.get("/rooms")
-async def get_professor_rooms(email: str, db: Session = Depends(get_db)):
+async def get_professor_rooms(email: str, db: Annotated[Session, Depends(get_db)]):
     """
     Identifies the rooms where the professor teaches, limited to FIESC groups.
     """
@@ -161,7 +162,7 @@ async def get_groups_by_subject(
     email: str, 
     subject: str, 
     activity_type: str, 
-    db: Session = Depends(get_db)
+    db: Annotated[Session, Depends(get_db)]
 ):
     """
     Identifies the groups a professor teaches a specific subject to.
@@ -256,7 +257,7 @@ async def get_rooms_by_subject(
     email: str, 
     subject: str, 
     activity_type: str, 
-    db: Session = Depends(get_db)
+    db: Annotated[Session, Depends(get_db)]
 ):
     """
     Identifies the rooms where a specific professor teaches a specific subject,
@@ -327,7 +328,7 @@ async def get_rooms_by_subject(
 
 @router.get("/reservations")
 def list_professor_reservations(
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)],
     current_user: User = Depends(get_current_user)
 ):
     """

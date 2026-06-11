@@ -17,6 +17,7 @@ from app.services.sync_logger import run_sync_with_logging
 from app.services.backup import run_backup_process
 from app.services.scheduler import scheduler, scheduled_backup_job, sync_base_and_schedule_logic, scheduled_sync_job
 from app.utils.maintenance import verify_system_available
+from typing import Annotated
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -28,7 +29,7 @@ def check_admin(user: User):
 # --- USER MANAGEMENT ROUTES ---
 @router.get("/users", response_model=List[UserResponse])
 async def get_all_users(
-    db: Session = Depends(get_db), 
+    db: Annotated[Session, Depends(get_db)], 
     admin_user: User = Depends(get_current_user)
 ):
     """Retrieves all users from the database."""
@@ -39,7 +40,7 @@ async def get_all_users(
 @router.post("/users/create", dependencies=[Depends(verify_system_available)])
 async def create_user(
     user_in: UserCreate, 
-    db: Session = Depends(get_db), 
+    db: Annotated[Session, Depends(get_db)], 
     admin_user: User = Depends(get_current_user)
 ):
     """Creates a new user and links them to the professors table if applicable."""
@@ -85,7 +86,7 @@ async def create_user(
 @router.delete("/users/delete/{email}", dependencies=[Depends(verify_system_available)])
 async def delete_user(
     email: str, 
-    db: Session = Depends(get_db), 
+    db: Annotated[Session, Depends(get_db)], 
     admin_user: User = Depends(get_current_user)
 ):
     """Deletes a user by email, with protection for the main administrator."""
@@ -117,7 +118,7 @@ async def delete_user(
 async def update_user(
     email: str, 
     update_data: UserUpdate,
-    db: Session = Depends(get_db), 
+    db: Annotated[Session, Depends(get_db)], 
     admin_user: User = Depends(get_current_user)
 ):
     """
@@ -182,9 +183,9 @@ async def update_user(
 
 @router.get("/requests")
 async def get_professor_requests(
-    status: Optional[str] = None, # Filtering parameter (pending, approved, rejected)
-    db: Session = Depends(get_db), 
-    admin_user: User = Depends(get_current_user)
+    db: Annotated[Session, Depends(get_db)], 
+    admin_user: User = Depends(get_current_user),
+    status: Optional[str] = None # Filtering parameter (pending, approved, rejected)
 ):
     """
     Returns access requests. 
@@ -204,7 +205,7 @@ async def get_professor_requests(
 @router.post("/requests/approve/{request_id}", dependencies=[Depends(verify_system_available)])
 async def approve_professor_request(
     request_id: int,
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)],
     admin_user: User = Depends(get_current_user)
 ):
     """
@@ -273,7 +274,7 @@ async def approve_professor_request(
 @router.post("/requests/reject/{request_id}", dependencies=[Depends(verify_system_available)])
 async def reject_professor_request(
     request_id: int,
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)],
     admin_user: User = Depends(get_current_user)
 ):
     """Rejects an access request."""
@@ -309,7 +310,7 @@ async def reject_professor_request(
 # --- SCHEDULE SYNC ROUTES ---
 
 @router.get("/sync/status")
-async def get_maintenance_status(db: Session = Depends(get_db)):
+async def get_maintenance_status(db: Annotated[Session, Depends(get_db)]):
     """
     Public route for checking maintenance status.
     Returns true if the system is being updated.
@@ -370,7 +371,7 @@ async def sync_full_db_schedule(bg: BackgroundTasks, user: User = Depends(get_cu
 
 @router.get("/sync/history", response_model=List[SyncHistoryResponse])
 async def get_sync_history(
-    db: Session = Depends(get_db), 
+    db: Annotated[Session, Depends(get_db)], 
     admin_user: User = Depends(get_current_user)
 ):
     """
@@ -384,7 +385,7 @@ async def get_sync_history(
     return history
 
 @router.get("/sync/settings")
-async def get_sync_settings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def get_sync_settings(db: Annotated[Session, Depends(get_db)], user: User = Depends(get_current_user)):
     """Returns the current configuration for automatic synchronization."""
     check_admin(user)
     status_obj = db.query(SystemStatus).first()
@@ -393,7 +394,7 @@ async def get_sync_settings(db: Session = Depends(get_db), user: User = Depends(
 @router.post("/sync/settings", dependencies=[Depends(verify_system_available)])
 async def update_sync_settings(
     settings: SyncSettingsUpdate, 
-    db: Session = Depends(get_db), 
+    db: Annotated[Session, Depends(get_db)], 
     user: User = Depends(get_current_user)
 ):
     """
@@ -448,7 +449,7 @@ async def update_sync_settings(
 # --- RESERVATION ROUTES ---
 
 @router.get("/reservations", dependencies=[Depends(verify_system_available)])
-def get_all_reservations(db: Session = Depends(get_db)):
+def get_all_reservations(db: Annotated[Session, Depends(get_db)]):
     """
     Admin route that returns the global history of all reservations.
     """
@@ -459,7 +460,7 @@ def get_all_reservations(db: Session = Depends(get_db)):
 @router.post("/backup/settings", dependencies=[Depends(verify_system_available)])
 async def update_backup_settings(
     settings: BackupSettingsUpdate, 
-    db: Session = Depends(get_db), 
+    db: Annotated[Session, Depends(get_db)], 
     user: User = Depends(get_current_user)
 ):
     """
@@ -536,7 +537,7 @@ async def trigger_manual_backup(
     return {"message": "Backup process started in background."}
 
 @router.get("/backups")
-async def list_backups(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def list_backups(db: Annotated[Session, Depends(get_db)], user: User = Depends(get_current_user)):
     """Retrieves a chronological history of all successful backups."""
     check_admin(user)
     return db.query(DatabaseBackup).order_by(DatabaseBackup.created_at.desc()).all()
